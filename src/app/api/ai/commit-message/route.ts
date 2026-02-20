@@ -1,6 +1,7 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { generateText } from "ai";
 import { auth } from "@/lib/auth";
+import { getErrorMessage } from "@/lib/utils";
 import { headers } from "next/headers";
 
 export async function POST(req: Request) {
@@ -12,7 +13,6 @@ export async function POST(req: Request) {
   const body = await req.json();
   const model = anthropic("claude-haiku-4-5-20251001");
 
-  // Mode 1: PR squash merge commit message
   if (body.mode === "squash") {
     const { prTitle, prBody, prNumber, commits } = body;
     if (!prTitle) {
@@ -37,15 +37,14 @@ export async function POST(req: Request) {
       const description = lines.slice(1).join("\n").trim();
 
       return Response.json({ title, description });
-    } catch (e: any) {
+    } catch (e: unknown) {
       return Response.json(
-        { error: e.message || "Failed to generate commit message" },
+        { error: getErrorMessage(e) || "Failed to generate commit message" },
         { status: 500 }
       );
     }
   }
 
-  // Mode 2: File diff commit message (default)
   const { filename, originalContent, newContent } = body;
   if (!filename || originalContent == null || newContent == null) {
     return Response.json({ error: "Missing fields" }, { status: 400 });
@@ -79,9 +78,9 @@ export async function POST(req: Request) {
     });
 
     return Response.json({ message: text.trim() });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return Response.json(
-      { error: e.message || "Failed to generate commit message" },
+      { error: getErrorMessage(e) || "Failed to generate commit message" },
       { status: 500 }
     );
   }

@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOctokit } from "@/lib/github";
 import { threeWayMerge, type ConflictFileData } from "@/lib/three-way-merge";
+import { getErrorMessage } from "@/lib/utils";
 
 const MAX_FILES = 30;
+
+interface GitHubFileContent {
+  content: string;
+  type: string;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -24,7 +30,6 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // 1. Compare commits to get merge base + file list
     const { data: comparison } = await octokit.repos.compareCommits({
       owner,
       repo,
@@ -44,7 +49,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 2. For each file, fetch 3 versions in parallel: ancestor, base tip, head tip
     const files: ConflictFileData[] = await Promise.all(
       diffFiles.map(async (file) => {
         const filePath = file.filename;
@@ -58,9 +62,10 @@ export async function GET(request: NextRequest) {
               ref,
             });
             if (Array.isArray(data) || data.type !== "file") return null;
-            return Buffer.from((data as any).content, "base64").toString("utf-8");
+            const fileContent = data as GitHubFileContent;
+            return Buffer.from(fileContent.content, "base64").toString("utf-8");
           } catch {
-            return null; // File doesn't exist at this ref (new/deleted)
+            return null;
           }
         };
 
@@ -70,17 +75,13 @@ export async function GET(request: NextRequest) {
           fetchContent(head),
         ]);
 
-        // Handle new/deleted files
         if (ancestorContent === null && baseContent === null && headContent !== null) {
-          // New file only on head side
           return { path: filePath, hunks: [{ type: "clean" as const, resolvedLines: headContent.split("\n") }], hasConflicts: false, autoResolved: true };
         }
         if (ancestorContent === null && headContent === null && baseContent !== null) {
-          // New file only on base side
           return { path: filePath, hunks: [{ type: "clean" as const, resolvedLines: baseContent.split("\n") }], hasConflicts: false, autoResolved: true };
         }
         if (baseContent === null && headContent === null) {
-          // Both deleted — no conflict
           return { path: filePath, hunks: [], hasConflicts: false, autoResolved: true };
         }
 
@@ -88,7 +89,6 @@ export async function GET(request: NextRequest) {
         const baseLines = (baseContent ?? "").split("\n");
         const headLines = (headContent ?? "").split("\n");
 
-        // If only one side changed from ancestor, auto-resolve
         const baseChanged = baseContent !== ancestorContent;
         const headChanged = headContent !== ancestorContent;
 
@@ -102,7 +102,6 @@ export async function GET(request: NextRequest) {
           return { path: filePath, hunks: [{ type: "clean" as const, resolvedLines: ancestor }], hasConflicts: false, autoResolved: true };
         }
 
-        // Both sides changed — run 3-way merge
         const result = threeWayMerge(ancestor, baseLines, headLines);
         return {
           path: filePath,
@@ -119,10 +118,9 @@ export async function GET(request: NextRequest) {
       headBranch: head,
       files,
     });
-  } catch (e: any) {
-    console.error("[merge-conflicts] error:", e);
+  } catch (e: unknown) {
     return NextResponse.json(
-      { error: e.message || "Failed to compute merge conflicts" },
+      { error: getErrorMessage(e) || "Failed to compute merge conflicts" },
       { status: 500 }
     );
   }

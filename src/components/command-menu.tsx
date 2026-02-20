@@ -1831,33 +1831,37 @@ export function CommandMenu() {
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between px-3 py-1.5 border-t border-border/60 dark:border-white/4 bg-muted/30 dark:bg-white/[0.01]">
-                  <div className="flex items-center gap-3 text-[10px] text-muted-foreground/40">
-                    <div className="flex items-center gap-1">
-                      <span className="inline-flex h-4.5 items-center rounded-sm border border-border/60 dark:border-white/8 bg-muted/50 dark:bg-white/3 px-1 font-mono text-[9px]">↑↓</span>
+                <div className="flex items-center justify-between px-2.5 py-1.5 border-t border-border/60 dark:border-white/4">
+                  <div className="flex items-center gap-2.5 text-[10px] text-muted-foreground/50">
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex gap-0.5">
+                        <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] bg-muted/60 dark:bg-white/[0.06] px-1 font-mono text-[9px] text-muted-foreground/60 shadow-[0_1px_0_0] shadow-border/80 dark:shadow-white/[0.06]">↑</kbd>
+                        <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] bg-muted/60 dark:bg-white/[0.06] px-1 font-mono text-[9px] text-muted-foreground/60 shadow-[0_1px_0_0] shadow-border/80 dark:shadow-white/[0.06]">↓</kbd>
+                      </div>
                       <span>navigate</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <span className="inline-flex h-4.5 items-center rounded-sm border border-border/60 dark:border-white/8 bg-muted/50 dark:bg-white/3 px-1 font-mono text-[9px]">↵</span>
+                    <div className="flex items-center gap-1.5">
+                      <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] bg-muted/60 dark:bg-white/[0.06] px-1 font-mono text-[9px] text-muted-foreground/60 shadow-[0_1px_0_0] shadow-border/80 dark:shadow-white/[0.06]">↵</kbd>
                       <span>select</span>
                     </div>
-                    {mode === "commands" && (
-                      <div className="flex items-center gap-1">
-                        <span className="inline-flex h-4.5 items-center rounded-sm border border-border/60 dark:border-white/8 bg-muted/50 dark:bg-white/3 px-1 font-mono text-[9px]">/</span>
-                        <span>search repos</span>
+                    {mode === "commands" ? (
+                      <div className="flex items-center gap-1.5">
+                        <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] bg-muted/60 dark:bg-white/[0.06] px-1 font-mono text-[9px] text-muted-foreground/60 shadow-[0_1px_0_0] shadow-border/80 dark:shadow-white/[0.06]">/</kbd>
+                        <span>repos</span>
                       </div>
-                    )}
-                    {mode !== "commands" && (
-                      <div className="flex items-center gap-1">
-                        <span className="inline-flex h-4.5 items-center rounded-sm border border-border/60 dark:border-white/8 bg-muted/50 dark:bg-white/3 px-1 font-mono text-[9px]">&#x232B;</span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] bg-muted/60 dark:bg-white/[0.06] px-1 font-mono text-[9px] text-muted-foreground/60 shadow-[0_1px_0_0] shadow-border/80 dark:shadow-white/[0.06]">⌫</kbd>
                         <span>back</span>
                       </div>
                     )}
+                    <div className="flex items-center gap-1.5">
+                      <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[4px] bg-muted/60 dark:bg-white/[0.06] px-1.5 font-mono text-[9px] text-muted-foreground/60 shadow-[0_1px_0_0] shadow-border/80 dark:shadow-white/[0.06]">esc</kbd>
+                      <span>close</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground/30">
-                    <span className="inline-flex h-4.5 items-center rounded-sm border border-border/60 dark:border-white/8 bg-muted/50 dark:bg-white/3 px-1 font-mono text-[9px]">
-                      Tab
-                    </span>
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/40">
+                    <kbd className="inline-flex h-[18px] items-center justify-center rounded-[4px] bg-muted/60 dark:bg-white/[0.06] px-1.5 font-mono text-[9px] text-muted-foreground/60 shadow-[0_1px_0_0] shadow-border/80 dark:shadow-white/[0.06]">Tab</kbd>
                     <span>switch</span>
                   </div>
                 </div>

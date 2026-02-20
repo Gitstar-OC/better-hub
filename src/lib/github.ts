@@ -21,7 +21,7 @@ export type RepoPermissions = {
   triage: boolean;
 };
 
-export function extractRepoPermissions(repoData: any): RepoPermissions {
+export function extractRepoPermissions(repoData: { permissions?: Partial<RepoPermissions> }): RepoPermissions {
   const p = repoData?.permissions;
   return {
     admin: !!p?.admin,
@@ -179,6 +179,18 @@ export class GitHubRateLimitError extends Error {
     this.limit = limit;
     this.used = used;
   }
+}
+
+function isOctokitNotModified(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { status?: number }).status === 304;
+}
+
+function isOctokitNotFound(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const status = (error as { status?: number }).status;
+  if (status === 404) return true;
+  const message = (error as { message?: string }).message ?? "";
+  return message.includes("404");
 }
 
 function isRateLimitError(error: unknown): { resetAt: number; limit: number; used: number } | null {
@@ -829,11 +841,11 @@ async function fetchRepoContributorsFromGitHub(
 ) {
   try {
     const response = await octokit.repos.listContributors({ owner, repo, per_page: perPage });
-    const list = response.data.map((c: any) => ({
-      login: c.login as string,
-      avatar_url: c.avatar_url as string,
-      contributions: c.contributions as number,
-      html_url: c.html_url as string,
+    const list = response.data.map((c) => ({
+      login: c.login ?? "",
+      avatar_url: c.avatar_url ?? "",
+      contributions: c.contributions,
+      html_url: c.html_url ?? "",
     }));
 
     let totalCount = list.length;
@@ -860,7 +872,6 @@ async function fetchUserProfileFromGitHub(octokit: Octokit, username: string) {
     // continue to fallbacks
   }
 
-  // Try as a bot account (e.g. "copilot" → "copilot[bot]")
   if (!username.endsWith("[bot]")) {
     try {
       const { data } = await octokit.users.getByUsername({
@@ -872,27 +883,27 @@ async function fetchUserProfileFromGitHub(octokit: Octokit, username: string) {
     }
   }
 
-  // Try resolving as a GitHub App
   try {
     const { data: app } = await octokit.request("GET /apps/{app_slug}", {
       app_slug: username.toLowerCase(),
-    } as any);
+    });
+    const appData = app as Record<string, unknown>;
     return {
-      login: (app as any).slug ?? username,
-      name: (app as any).name ?? username,
-      avatar_url: (app as any).owner?.avatar_url ?? "",
-      html_url: (app as any).html_url ?? `https://github.com/apps/${username.toLowerCase()}`,
-      bio: (app as any).description ?? null,
-      blog: (app as any).external_url ?? null,
+      login: (appData.slug as string) ?? username,
+      name: (appData.name as string) ?? username,
+      avatar_url: ((appData.owner as Record<string, unknown>)?.avatar_url as string) ?? "",
+      html_url: (appData.html_url as string) ?? `https://github.com/apps/${username.toLowerCase()}`,
+      bio: (appData.description as string) ?? null,
+      blog: (appData.external_url as string) ?? null,
       location: null,
       company: null,
       twitter_username: null,
       public_repos: 0,
       followers: 0,
       following: 0,
-      created_at: (app as any).created_at ?? new Date().toISOString(),
+      created_at: (appData.created_at as string) ?? new Date().toISOString(),
       type: "Bot",
-    } as any;
+    };
   } catch {
     // all lookups failed
   }
@@ -947,7 +958,7 @@ async function fetchRepoNavCountsFromGitHub(
       .listWorkflowRunsForRepo({
         owner,
         repo,
-        status: "in_progress" as any,
+        status: "in_progress",
         per_page: 1,
       })
       .catch(() => ({ data: { total_count: 0 } })),
@@ -966,7 +977,7 @@ async function ghConditionalGet(
   token: string,
   path: string,
   etag: string | null
-): Promise<{ notModified: true; data?: undefined; etag?: undefined } | { notModified: false; data: any; etag: string | null }> {
+): Promise<{ notModified: true; data?: undefined; etag?: undefined } | { notModified: false; data: unknown; etag: string | null }> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json",
@@ -1003,10 +1014,10 @@ async function processGitDataSyncJob(
       try {
         const resp = await authCtx.octokit.users.getAuthenticated({
           headers: auCached?.etag ? { "If-None-Match": auCached.etag } : {},
-        } as any);
+        });
         await upsertGithubCacheEntry(authCtx.userId, auKey, "authenticated_user", resp.data, resp.headers?.etag ?? null);
-      } catch (e: any) {
-        if (e.status === 304) { await touchGithubCacheEntrySyncedAt(authCtx.userId, auKey); return; }
+      } catch (e: unknown) {
+        if (isOctokitNotModified(e)) { await touchGithubCacheEntrySyncedAt(authCtx.userId, auKey); return; }
         throw e;
       }
       return;
@@ -1086,10 +1097,10 @@ async function processGitDataSyncJob(
         const resp = await authCtx.octokit.users.getByUsername({
           username: payload.username,
           headers: upCached?.etag ? { "If-None-Match": upCached.etag } : {},
-        } as any);
+        });
         await upsertGithubCacheEntry(authCtx.userId, upKey, "user_profile", resp.data, resp.headers?.etag ?? null);
-      } catch (e: any) {
-        if (e.status === 304) { await touchGithubCacheEntrySyncedAt(authCtx.userId, upKey); return; }
+      } catch (e: unknown) {
+        if (isOctokitNotModified(e)) { await touchGithubCacheEntrySyncedAt(authCtx.userId, upKey); return; }
         throw e;
       }
       return;
@@ -1167,9 +1178,8 @@ async function processGitDataSyncJob(
           const content = Buffer.from(rdRes.data.content, "base64").toString("utf-8");
           await upsertGithubCacheEntry(authCtx.userId, rdKey, "repo_readme", { ...rdRes.data, content }, rdRes.etag);
         }
-      } catch (e: any) {
-        // 404 = no readme
-        if (e.message?.includes("404")) { await upsertGithubCacheEntry(authCtx.userId, rdKey, "repo_readme", null); return; }
+      } catch (e: unknown) {
+        if (isOctokitNotFound(e)) { await upsertGithubCacheEntry(authCtx.userId, rdKey, "repo_readme", null); return; }
         throw e;
       }
       return;
@@ -1887,26 +1897,26 @@ export async function getPullRequestReviewThreads(
     const nodes =
       json.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
 
-    return nodes.map((thread: any) => ({
+    return nodes.map((thread: Record<string, unknown>) => ({
       id: thread.id,
-      isResolved: thread.isResolved ?? false,
-      isOutdated: thread.isOutdated ?? false,
-      path: thread.path ?? "",
-      line: thread.line ?? null,
-      startLine: thread.startLine ?? null,
-      diffSide: thread.diffSide ?? "RIGHT",
+      isResolved: (thread.isResolved as boolean) ?? false,
+      isOutdated: (thread.isOutdated as boolean) ?? false,
+      path: (thread.path as string) ?? "",
+      line: (thread.line as number | null) ?? null,
+      startLine: (thread.startLine as number | null) ?? null,
+      diffSide: (thread.diffSide as string) ?? "RIGHT",
       resolvedBy: thread.resolvedBy
-        ? { login: thread.resolvedBy.login }
+        ? { login: (thread.resolvedBy as { login: string }).login }
         : null,
-      comments: (thread.comments?.nodes ?? []).map((c: any) => ({
+      comments: (((thread.comments as { nodes?: Record<string, unknown>[] })?.nodes) ?? []).map((c: Record<string, unknown>) => ({
         id: c.id,
         databaseId: c.databaseId,
         body: c.body ?? "",
-        createdAt: c.createdAt ?? "",
+        createdAt: (c.createdAt as string) ?? "",
         author: c.author
-          ? { login: c.author.login, avatarUrl: c.author.avatarUrl }
+          ? { login: (c.author as { login: string; avatarUrl: string }).login, avatarUrl: (c.author as { login: string; avatarUrl: string }).avatarUrl }
           : null,
-        reviewState: c.pullRequestReview?.state ?? null,
+        reviewState: (c.pullRequestReview as { state?: string })?.state ?? null,
       })),
     }));
   } catch {
@@ -1933,7 +1943,7 @@ export interface PRBundleData {
     head: { ref: string; sha: string };
     base: { ref: string; sha: string };
     labels: { name: string; color: string | null; description: string | null }[];
-    reactions: any;
+    reactions: ReactionSummary | undefined;
   };
   issueComments: {
     id: number;
@@ -1941,7 +1951,7 @@ export interface PRBundleData {
     created_at: string;
     user: { login: string; avatar_url: string; type?: string } | null;
     author_association: string;
-    reactions: any;
+    reactions: ReactionSummary | undefined;
   }[];
   reviewComments: {
     id: number;
@@ -2068,7 +2078,16 @@ const PR_BUNDLE_QUERY = `
   }
 `;
 
-function mapReactionGroups(groups: any[] | undefined): any {
+interface ReactionSummary extends Record<string, number> {
+  total_count: number;
+}
+
+interface GraphQLReactionGroup {
+  content: string;
+  reactors: { totalCount: number };
+}
+
+function mapReactionGroups(groups: GraphQLReactionGroup[] | undefined): ReactionSummary | undefined {
   if (!groups) return undefined;
   const map: Record<string, number> = {};
   let total = 0;
@@ -2085,7 +2104,8 @@ function mapReactionGroups(groups: any[] | undefined): any {
   return { ...map, total_count: total };
 }
 
-function transformGraphQLPRBundle(node: any): PRBundleData {
+/* eslint-disable @typescript-eslint/no-explicit-any -- GraphQL responses are untyped */
+function transformGraphQLPRBundle(node: Record<string, any>): PRBundleData {
   const stateMap: Record<string, string> = { OPEN: "open", CLOSED: "closed", MERGED: "closed" };
   const mergeableMap: Record<string, boolean | null> = { MERGEABLE: true, CONFLICTING: false, UNKNOWN: null };
 
@@ -2104,7 +2124,7 @@ function transformGraphQLPRBundle(node: any): PRBundleData {
     user: node.author ? { login: node.author.login, avatar_url: node.author.avatarUrl, type: node.author.__typename } : null,
     head: { ref: node.headRefName, sha: node.headRefOid },
     base: { ref: node.baseRefName, sha: node.baseRefOid },
-    labels: (node.labels?.nodes ?? []).map((l: any) => ({
+    labels: (node.labels?.nodes ?? []).map((l: Record<string, any>) => ({
       name: l.name,
       color: l.color ?? null,
       description: l.description ?? null,
@@ -2112,7 +2132,7 @@ function transformGraphQLPRBundle(node: any): PRBundleData {
     reactions: mapReactionGroups(node.reactionGroups),
   };
 
-  const issueComments = (node.comments?.nodes ?? []).map((c: any) => ({
+  const issueComments = (node.comments?.nodes ?? []).map((c: Record<string, any>) => ({
     id: c.databaseId,
     body: c.body ?? "",
     created_at: c.createdAt,
@@ -2122,7 +2142,7 @@ function transformGraphQLPRBundle(node: any): PRBundleData {
   }));
 
   const reviewComments: PRBundleData["reviewComments"] = [];
-  const reviews = (node.reviews?.nodes ?? []).map((r: any) => {
+  const reviews = (node.reviews?.nodes ?? []).map((r: Record<string, any>) => {
     const reviewId = r.databaseId;
     for (const rc of r.comments?.nodes ?? []) {
       reviewComments.push({
@@ -2145,7 +2165,7 @@ function transformGraphQLPRBundle(node: any): PRBundleData {
     };
   });
 
-  const reviewThreads: ReviewThread[] = (node.reviewThreads?.nodes ?? []).map((thread: any) => ({
+  const reviewThreads: ReviewThread[] = (node.reviewThreads?.nodes ?? []).map((thread: Record<string, any>) => ({
     id: thread.id,
     isResolved: thread.isResolved ?? false,
     isOutdated: thread.isOutdated ?? false,
@@ -2154,7 +2174,7 @@ function transformGraphQLPRBundle(node: any): PRBundleData {
     startLine: thread.startLine ?? null,
     diffSide: thread.diffSide ?? "RIGHT",
     resolvedBy: thread.resolvedBy ? { login: thread.resolvedBy.login } : null,
-    comments: (thread.comments?.nodes ?? []).map((c: any) => ({
+    comments: (thread.comments?.nodes ?? []).map((c: Record<string, any>) => ({
       id: c.id,
       databaseId: c.databaseId,
       body: c.body ?? "",
@@ -2164,7 +2184,7 @@ function transformGraphQLPRBundle(node: any): PRBundleData {
     })),
   }));
 
-  const commits = (node.commits?.nodes ?? []).map((n: any) => {
+  const commits = (node.commits?.nodes ?? []).map((n: Record<string, any>) => {
     const c = n.commit;
     return {
       sha: c.oid,
@@ -2173,9 +2193,10 @@ function transformGraphQLPRBundle(node: any): PRBundleData {
         author: c.author ? { name: c.author.name, date: c.author.date } : null,
         committer: c.committer ? { name: c.committer.name, date: c.committer.date } : null,
       },
-      author: null, // GraphQL commits don't include the GitHub user association directly
+      author: null,
     };
   });
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   return { pr, issueComments, reviewComments, reviews, reviewThreads, commits };
 }
@@ -2285,14 +2306,14 @@ export async function getLinkedPullRequests(
 
   try {
     const events = await octokit.paginate(
-      octokit.issues.listEventsForTimeline as any,
+      octokit.issues.listEventsForTimeline,
       { owner, repo, issue_number: issueNumber, per_page: 100 }
     );
 
     const seen = new Set<string>();
     const linkedPRs: LinkedPullRequest[] = [];
 
-    for (const event of events as any[]) {
+    for (const event of events) {
       if (event.event !== "cross-referenced") continue;
       const source = event.source?.issue;
       if (!source?.pull_request) continue;
@@ -2989,7 +3010,7 @@ export async function getRepositoryAdvisory(
   if (!octokit) return null;
 
   try {
-    const { data } = await (octokit.securityAdvisories as any).getRepositoryAdvisory({
+    const { data } = await octokit.request("GET /repos/{owner}/{repo}/security-advisories/{ghsa_id}", {
       owner,
       repo,
       ghsa_id: ghsaId,
@@ -3204,10 +3225,10 @@ export async function getRepoContributorStats(
       response = await octokit.repos.getContributorsStats({ owner, repo });
     }
     if (!Array.isArray(response.data)) return [];
-    return (response.data as any[]).map((entry: any) => ({
+    return response.data.map((entry) => ({
       login: entry.author?.login ?? "",
       total: entry.total ?? 0,
-      weeks: (entry.weeks ?? []).map((w: any) => ({
+      weeks: (entry.weeks ?? []).map((w) => ({
         w: w.w,
         a: w.a,
         d: w.d,
@@ -3233,13 +3254,13 @@ export async function getCommitActivity(
   if (!octokit) return [];
 
   try {
-    let response = await (octokit.repos as any).getCommitActivityStats({ owner, repo });
+    let response = await octokit.request("GET /repos/{owner}/{repo}/stats/commit_activity", { owner, repo });
     if (response.status === 202) {
       await new Promise((r) => setTimeout(r, 2000));
-      response = await (octokit.repos as any).getCommitActivityStats({ owner, repo });
+      response = await octokit.request("GET /repos/{owner}/{repo}/stats/commit_activity", { owner, repo });
     }
     if (!Array.isArray(response.data)) return [];
-    return (response.data as any[]).map((w: any) => ({
+    return (response.data as { total: number; week: number; days: number[] }[]).map((w) => ({
       total: w.total ?? 0,
       week: w.week ?? 0,
       days: w.days ?? [],
@@ -3263,13 +3284,13 @@ export async function getCodeFrequency(
   if (!octokit) return [];
 
   try {
-    let response = await (octokit.repos as any).getCodeFrequencyStats({ owner, repo });
+    let response = await octokit.request("GET /repos/{owner}/{repo}/stats/code_frequency", { owner, repo });
     if (response.status === 202) {
       await new Promise((r) => setTimeout(r, 2000));
-      response = await (octokit.repos as any).getCodeFrequencyStats({ owner, repo });
+      response = await octokit.request("GET /repos/{owner}/{repo}/stats/code_frequency", { owner, repo });
     }
     if (!Array.isArray(response.data)) return [];
-    return (response.data as any[]).map((entry: any) => ({
+    return (response.data as [number, number, number][]).map((entry) => ({
       week: entry[0] ?? 0,
       additions: entry[1] ?? 0,
       deletions: Math.abs(entry[2] ?? 0),
@@ -3292,15 +3313,16 @@ export async function getWeeklyParticipation(
   if (!octokit) return null;
 
   try {
-    let response = await (octokit.repos as any).getParticipationStats({ owner, repo });
+    let response = await octokit.request("GET /repos/{owner}/{repo}/stats/participation", { owner, repo });
     if (response.status === 202) {
       await new Promise((r) => setTimeout(r, 2000));
-      response = await (octokit.repos as any).getParticipationStats({ owner, repo });
+      response = await octokit.request("GET /repos/{owner}/{repo}/stats/participation", { owner, repo });
     }
-    if (!response.data?.all) return null;
+    const data = response.data as { all?: number[]; owner?: number[] };
+    if (!data.all) return null;
     return {
-      all: response.data.all ?? [],
-      owner: response.data.owner ?? [],
+      all: data.all ?? [],
+      owner: data.owner ?? [],
     };
   } catch {
     return null;
@@ -3316,7 +3338,7 @@ export async function getLanguages(
 
   try {
     const response = await octokit.repos.listLanguages({ owner, repo });
-    return (response.data as any) ?? {};
+    return response.data ?? {};
   } catch {
     return {};
   }
@@ -3359,7 +3381,7 @@ async function fetchPersonRepoActivityFromGitHub(
     octokit.repos
       .listCommits({ owner, repo, author: username, per_page: 30 })
       .then((r) =>
-        r.data.map((c: any) => ({
+        r.data.map((c) => ({
           sha: c.sha,
           message: c.commit.message.split("\n")[0],
           date: c.commit.author?.date ?? c.commit.committer?.date ?? "",
@@ -3373,7 +3395,7 @@ async function fetchPersonRepoActivityFromGitHub(
         order: "desc",
       })
       .then((r) =>
-        r.data.items.map((item: any) => ({
+        r.data.items.map((item) => ({
           number: item.number,
           title: item.title,
           state: item.pull_request?.merged_at ? "merged" : item.state,
@@ -3388,7 +3410,7 @@ async function fetchPersonRepoActivityFromGitHub(
         order: "desc",
       })
       .then((r) =>
-        r.data.items.map((item: any) => ({
+        r.data.items.map((item) => ({
           number: item.number,
           title: item.title,
           state: item.state,
@@ -3403,7 +3425,7 @@ async function fetchPersonRepoActivityFromGitHub(
         order: "desc",
       })
       .then((r) =>
-        r.data.items.map((item: any) => ({
+        r.data.items.map((item) => ({
           pr_number: item.number,
           pr_title: item.title,
           submitted_at: item.updated_at,

@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     q: fullQuery,
     page,
     per_page: perPage,
-    sort: "best-match" as any,
+    sort: "updated",
     order: "desc",
   });
 

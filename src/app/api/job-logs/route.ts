@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOctokit } from "@/lib/github";
+import { getErrorStatus } from "@/lib/utils";
+
+type AnnotationType = "error" | "warning" | "debug" | "notice" | null;
 
 interface LogLine {
   timestamp: string | null;
   content: string;
-  annotation: "error" | "warning" | "debug" | "notice" | null;
+  annotation: AnnotationType;
 }
 
 interface StepLog {
@@ -19,8 +22,6 @@ function parseLogText(raw: string): StepLog[] {
   let stepCounter = 0;
 
   for (const line of raw.split("\n")) {
-    // Detect step boundaries via ##[group] markers
-    // Format: "2024-01-01T00:00:00.0000000Z ##[group]Step Name"
     const groupMatch = line.match(
       /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+##\[group\](.*)/
     );
@@ -35,13 +36,11 @@ function parseLogText(raw: string): StepLog[] {
       continue;
     }
 
-    // End of step group
     if (line.includes("##[endgroup]")) {
       continue;
     }
 
     if (!current) {
-      // Lines before any group — create an implicit step
       if (line.trim()) {
         stepCounter++;
         current = {
@@ -55,16 +54,14 @@ function parseLogText(raw: string): StepLog[] {
       }
     }
 
-    // Parse timestamp and content
     const tsMatch = line.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s+(.*)/);
     const timestamp = tsMatch ? tsMatch[1] : null;
     let content = tsMatch ? tsMatch[2] : line;
 
-    // Detect annotations
-    let annotation: LogLine["annotation"] = null;
+    let annotation: AnnotationType = null;
     const annoMatch = content.match(/^##\[(error|warning|debug|notice)\](.*)/);
     if (annoMatch) {
-      annotation = annoMatch[1] as LogLine["annotation"];
+      annotation = annoMatch[1] as AnnotationType;
       content = annoMatch[2];
     }
 
@@ -93,24 +90,24 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const { data } = await (octokit.actions.downloadJobLogsForWorkflowRun as any)({
+    const { data } = await octokit.actions.downloadJobLogsForWorkflowRun({
       owner,
       repo,
       job_id: Number(jobId),
     });
 
-    // data is the raw log text (string)
     const steps = parseLogText(typeof data === "string" ? data : String(data));
 
     return NextResponse.json({ steps });
-  } catch (err: any) {
-    if (err.status === 410) {
+  } catch (err: unknown) {
+    const status = getErrorStatus(err);
+    if (status === 410) {
       return NextResponse.json(
         { error: "Logs are no longer available" },
         { status: 410 }
       );
     }
-    if (err.status === 404) {
+    if (status === 404) {
       return NextResponse.json(
         { error: "Job not found" },
         { status: 404 }

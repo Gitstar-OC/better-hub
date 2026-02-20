@@ -45,20 +45,25 @@ function resolveModel(userModel: string, task: GhostTaskType = "default"): strin
 // ─── Safe tool wrapper ──────────────────────────────────────────────────────
 // Wraps all tool execute functions with try/catch so a single tool failure
 // (e.g. GitHub 403, rate limit, network error) doesn't crash the entire stream.
-function withSafeTools(tools: Record<string, any>): Record<string, any> {
-  const wrapped: Record<string, any> = {};
+interface ToolLike {
+  execute?: (...args: unknown[]) => Promise<unknown>;
+  [key: string]: unknown;
+}
+
+function withSafeTools(tools: Record<string, ToolLike>): Record<string, ToolLike> {
+  const wrapped: Record<string, ToolLike> = {};
   for (const [name, t] of Object.entries(tools)) {
     if (!t || typeof t !== "object") { wrapped[name] = t; continue; }
     const origExecute = t.execute;
     if (typeof origExecute !== "function") { wrapped[name] = t; continue; }
     wrapped[name] = {
       ...t,
-      execute: async (...args: any[]) => {
+      execute: async (...args: unknown[]) => {
         try {
           return await origExecute(...args);
-        } catch (e: any) {
-          console.error(`[Ghost] tool "${name}" error:`, e.message);
-          return { error: e.message || `Tool "${name}" failed` };
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : `Tool "${name}" failed`;
+          return { error: message };
         }
       },
     };
@@ -171,8 +176,7 @@ async function recallMemoriesForContext(
     return `\n\n## Recalled Memories
 The following are things the user previously asked you to remember. Use them as context if relevant:
 ${memoryLines.join("\n")}`;
-  } catch (e) {
-    console.error("[Ghost] memory recall error:", e);
+  } catch {
     return "";
   }
 }
@@ -188,6 +192,7 @@ interface PRContext {
   baseBranch: string;
   headBranch: string;
   files: { filename: string; patch: string }[];
+  mergeConflict?: boolean;
 }
 
 interface IssueContext {
@@ -295,7 +300,7 @@ function getGeneralTools(octokit: Octokit, pageContext?: PageContext, userId?: s
           default_branch: data.default_branch,
           created_at: data.created_at,
           updated_at: data.updated_at,
-          license: (data.license as any)?.spdx_id || null,
+          license: (data.license as { spdx_id?: string } | null)?.spdx_id || null,
           topics: data.topics,
           private: data.private,
           fork: data.fork,
@@ -1214,7 +1219,7 @@ function getPrTools(octokit: Octokit, prContext: PRContext, commitAuthor?: Commi
             return { error: "Not a file" };
           }
           const content = Buffer.from(
-            (data as any).content,
+            (data as { content: string }).content,
             "base64"
           ).toString("utf-8");
           return { path, content };
@@ -1254,7 +1259,7 @@ function getPrTools(octokit: Octokit, prContext: PRContext, commitAuthor?: Commi
             path,
             message: commitMessage,
             content: Buffer.from(content).toString("base64"),
-            sha: (fileData as any).sha,
+            sha: (fileData as { sha?: string }).sha,
             branch: prContext.headBranch,
             ...(commitAuthor ? { author: commitAuthor, committer: commitAuthor } : {}),
           } as any);
@@ -1441,7 +1446,7 @@ function getIssueTools(
             return { error: "Not a file" };
           }
           const content = Buffer.from(
-            (data as any).content,
+            (data as { content: string }).content,
             "base64"
           ).toString("utf-8");
           return { path, content };
@@ -1500,7 +1505,7 @@ function getIssueTools(
             path,
             message: commitMessage,
             content: Buffer.from(content).toString("base64"),
-            sha: (fileData as any).sha,
+            sha: (fileData as { sha?: string }).sha,
             branch: workingBranch,
             ...(commitAuthor ? { author: commitAuthor, committer: commitAuthor } : {}),
           } as any);
@@ -2210,7 +2215,7 @@ function getCodeEditTools(octokit: Octokit, commitAuthor?: CommitAuthor) {
           const { data: newTree } = await octokit.git.createTree({
             owner, repo,
             base_tree: baseTreeSha,
-            tree: treeEntries as any,
+            tree: treeEntries as { path: string; mode: string; type: string; sha: string | null }[],
           });
 
           const { data: newCommit } = await octokit.git.createCommit({
@@ -2318,7 +2323,7 @@ function getMergeConflictTools(octokit: Octokit, commitAuthor?: CommitAuthor) {
             head: headBranch,
           } as any);
 
-          const files = (comparison as any).files || [];
+          const files = (comparison as { files?: { filename: string; status: string }[] }).files || [];
           if (files.length === 0) {
             return { message: "No file differences found between branches." };
           }
@@ -2334,7 +2339,7 @@ function getMergeConflictTools(octokit: Octokit, commitAuthor?: CommitAuthor) {
                   owner, repo, path: f.filename, ref: baseBranch,
                 });
                 if (!Array.isArray(baseData) && baseData.type === "file") {
-                  result.baseContent = Buffer.from((baseData as any).content, "base64").toString("utf-8");
+                  result.baseContent = Buffer.from((baseData as { content: string }).content, "base64").toString("utf-8");
                 }
               } catch {
                 result.baseContent = null; // File doesn't exist on base
@@ -2346,7 +2351,7 @@ function getMergeConflictTools(octokit: Octokit, commitAuthor?: CommitAuthor) {
                   owner, repo, path: f.filename, ref: headBranch,
                 });
                 if (!Array.isArray(headData) && headData.type === "file") {
-                  result.headContent = Buffer.from((headData as any).content, "base64").toString("utf-8");
+                  result.headContent = Buffer.from((headData as { content: string }).content, "base64").toString("utf-8");
                 }
               } catch {
                 result.headContent = null; // File doesn't exist on head
@@ -2525,22 +2530,16 @@ The sandbox has git, node, npm, python, and common dev tools.
           defaultBranch = null;
         }
 
-        // ── Phase 1: Create sandbox ──
-        console.log("[Sandbox] Creating sandbox...");
         try {
           sandbox = await Sandbox.create({
             timeout: 10 * 60 * 1000,
             runtime: "node24",
           });
-          console.log("[Sandbox] Created:", sandbox.sandboxId);
-        } catch (e: any) {
-          console.error("[Sandbox] Create FAILED:", e.message);
+        } catch (e: unknown) {
           sandbox = null;
-          return { error: `Sandbox creation failed: ${e.message}` };
+          return { error: `Sandbox creation failed: ${e instanceof Error ? e.message : "unknown"}` };
         }
 
-        // ── Phase 2: Clone repo ──
-        console.log("[Sandbox] Cloning", `${owner}/${repo}...`);
         try {
           // Read-only git config — no credential helper for push
           await runShell(
@@ -2560,21 +2559,16 @@ The sandbox has git, node, npm, python, and common dev tools.
           const cloneResult = await runShell(sandbox, cloneCmd);
 
           if (cloneResult.exitCode !== 0) {
-            console.error("[Sandbox] Clone failed:", cloneResult.stderr);
             await sandbox.stop().catch(() => {});
             sandbox = null;
             return { error: `Clone failed: ${cloneResult.stderr}` };
           }
-          console.log("[Sandbox] Clone OK");
-        } catch (e: any) {
-          console.error("[Sandbox] Clone error:", e.message);
+        } catch (e: unknown) {
           if (sandbox) await sandbox.stop().catch(() => {});
           sandbox = null;
-          return { error: `Clone error: ${e.message}` };
+          return { error: `Clone error: ${e instanceof Error ? e.message : "unknown"}` };
         }
 
-        // ── Phase 3: Detect project (lightweight, no installs) ──
-        console.log("[Sandbox] Detecting project...");
         try {
           const [branchResult, lsResult] = await Promise.all([
             runShell(sandbox, "git rev-parse --abbrev-ref HEAD", {
@@ -2587,12 +2581,6 @@ The sandbox has git, node, npm, python, and common dev tools.
             .trim()
             .split("\n")
             .filter(Boolean);
-          console.log(
-            "[Sandbox] Branch:",
-            defaultBranch,
-            "Files:",
-            topLevelFiles.length
-          );
 
           const hasPnpm = topLevelFiles.includes("pnpm-lock.yaml");
           const hasYarn = topLevelFiles.includes("yarn.lock");
@@ -2637,13 +2625,6 @@ The sandbox has git, node, npm, python, and common dev tools.
             isMonorepo = true;
           }
 
-          console.log(
-            "[Sandbox] Ready:",
-            packageManager,
-            "monorepo:",
-            isMonorepo
-          );
-
           return {
             success: true,
             sandboxId: sandbox.sandboxId,
@@ -2656,9 +2637,7 @@ The sandbox has git, node, npm, python, and common dev tools.
             topLevelFiles,
             nextStep: `Run sandboxRun with command: ${installHint}`,
           };
-        } catch (e: any) {
-          console.error("[Sandbox] Detect error:", e.message);
-          // Clone succeeded — sandbox is still usable
+        } catch {
           return {
             success: true,
             sandboxId: sandbox.sandboxId,
@@ -2821,11 +2800,6 @@ export async function POST(req: Request) {
     activeFile?: string;
   } = await req.json();
 
-  // Debug: log what context was received
-  console.log("[Ghost] inlineContexts:", inlineContexts?.length ?? 0, inlineContexts?.map(c => ({ file: c.filename, lines: `${c.startLine}-${c.endLine}`, codeLen: c.selectedCode?.length ?? 0 })));
-  console.log("[Ghost] activeFile:", activeFile ?? "(none)");
-  console.log("[Ghost] mode:", prContext ? "PR" : issueContext ? "issue" : "general");
-
   const octokit = await getOctokitFromSession();
   if (!octokit) {
     return new Response("Unauthorized", { status: 401 });
@@ -2838,16 +2812,15 @@ export async function POST(req: Request) {
   const userId = session?.user?.id;
   let commitAuthor: CommitAuthor | undefined;
   if (session?.user) {
-    const u = session.user as any;
-    const name = u.name || u.login || u.username || "User";
-    const login = u.login || u.username || "user";
-    const email = u.email || `${login}@users.noreply.github.com`;
+    const u = session.user;
+    const name = u.name || "User";
+    const email = u.email || "ghost@users.noreply.github.com";
     commitAuthor = { name, email };
   }
 
   // Determine mode and build tools + system prompt
   let systemPrompt: string;
-  let tools: Record<string, any>;
+  let tools: Record<string, ToolLike>;
 
   const generalTools = getGeneralTools(octokit, pageContext, userId ?? undefined);
   const codeEditTools = getCodeEditTools(octokit, commitAuthor);
@@ -2938,7 +2911,7 @@ export async function POST(req: Request) {
     const prTools = getPrTools(octokit, resolvedPrContext, commitAuthor);
     const mergeConflictTools = getMergeConflictTools(octokit, commitAuthor);
     // For merge conflicts, skip file diffs — Ghost uses getMergeConflictInfo tool instead
-    if ((resolvedPrContext as any).mergeConflict) {
+    if (resolvedPrContext.mergeConflict) {
       const liteContext = { ...resolvedPrContext, files: [] };
       systemPrompt = buildPrSystemPrompt(liteContext, inlineContexts, activeFile, sandboxPrompt) + recalledMemories;
       systemPrompt += MERGE_CONFLICT_PROMPT
@@ -3004,7 +2977,7 @@ export async function POST(req: Request) {
               return { error: "Not a file" };
             }
             const content = Buffer.from(
-              (data as any).content,
+              (data as { content: string }).content,
               "base64"
             ).toString("utf-8");
             return { path, content };
@@ -3017,7 +2990,7 @@ export async function POST(req: Request) {
   }
 
   // Determine task type for model selection
-  const taskType: GhostTaskType = (resolvedPrContext as any)?.mergeConflict ? "mergeConflict" : "default";
+  const taskType: GhostTaskType = resolvedPrContext?.mergeConflict ? "mergeConflict" : "default";
 
   let userModelChoice = "auto";
   const serverApiKey = process.env.OPEN_ROUTER_API_KEY ?? "";
@@ -3036,16 +3009,12 @@ export async function POST(req: Request) {
   const modelId = resolveModel(userModelChoice, taskType);
 
   if (!apiKey) {
-    console.error("[Ghost] No OpenRouter API key configured");
     return new Response(
       JSON.stringify({ error: "No OpenRouter API key configured." }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 
-  console.log(`[Ghost] Using ${usingOwnKey ? "user" : "server"} API key: ${apiKey.slice(0, 12)}...${apiKey.slice(-4)}`);
-
-  // Pre-validate the API key to avoid mid-stream 401 errors
   try {
     const checkRes = await fetch("https://openrouter.ai/api/v1/auth/key", {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -3053,21 +3022,17 @@ export async function POST(req: Request) {
     if (!checkRes.ok) {
       // If user's own key is invalid, fall back to the server key
       if (usingOwnKey && serverApiKey) {
-        console.warn("[Ghost] User API key invalid, falling back to server key");
         apiKey = serverApiKey;
         usingOwnKey = false;
       } else {
-        const body = await checkRes.text().catch(() => "");
-        console.error("[Ghost] OpenRouter API key invalid:", checkRes.status, body);
         return new Response(
           JSON.stringify({ error: "OpenRouter API key is invalid or expired. Please update your API key in settings." }),
           { status: 401, headers: { "Content-Type": "application/json" } }
         );
       }
     }
-  } catch (e) {
-    // If the validation check itself fails (network error), proceed anyway
-    console.warn("[Ghost] Could not validate API key, proceeding:", e);
+  } catch {
+    // Network error validating key — proceed anyway
   }
 
   try {
@@ -3078,18 +3043,16 @@ export async function POST(req: Request) {
       tools,
       maxRetries: 4,
       stopWhen: stepCountIs(50),
-      onError({ error }) {
-        console.error("[Ghost] mid-stream error:", error);
-      },
+      onError() {},
     });
 
     return result.toUIMessageStreamResponse({
       sendReasoning: true,
     });
-  } catch (e: any) {
-    console.error("[Ghost] streamText error:", e);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "AI request failed";
     return new Response(
-      JSON.stringify({ error: e.message || "AI request failed" }),
+      JSON.stringify({ error: message }),
       { status: 502, headers: { "Content-Type": "application/json" } }
     );
   }

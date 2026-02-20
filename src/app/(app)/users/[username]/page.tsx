@@ -56,7 +56,7 @@ export default async function UserProfilePage({
     return <UnknownUserPage username={username} />;
   }
 
-  const isBot = (userData as any).type === "Bot";
+  const isBot = (userData as { type?: string }).type === "Bot";
   if (!isBot) {
     try {
       const resolvedLogin = userData.login;
@@ -81,7 +81,7 @@ export default async function UserProfilePage({
         blog: userData.blog || null,
         location: userData.location || null,
         company: userData.company || null,
-        twitter_username: (userData as any).twitter_username || null,
+        twitter_username: (userData as { twitter_username?: string | null }).twitter_username || null,
         public_repos: userData.public_repos,
         followers: userData.followers,
         following: userData.following,

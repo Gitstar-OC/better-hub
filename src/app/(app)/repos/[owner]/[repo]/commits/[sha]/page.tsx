@@ -25,7 +25,7 @@ export default async function CommitDetailPage({
   const highlightData: Record<string, Record<string, SyntaxToken[]>> = {};
   if (commit.files && commit.files.length > 0) {
     await Promise.all(
-      commit.files.map(async (file: any) => {
+      commit.files.map(async (file: { filename: string; patch?: string }) => {
         if (file.patch) {
           try {
             highlightData[file.filename] = await highlightDiffLines(
@@ -44,7 +44,7 @@ export default async function CommitDetailPage({
     <CommitDetail
       owner={owner}
       repo={repo}
-      commit={commit as any}
+      commit={commit as { sha: string; html_url: string; commit: { message: string; author: { name?: string | null; date?: string | null } | null; committer: { name?: string | null; date?: string | null } | null }; author: { login: string; avatar_url: string; html_url: string } | null; committer: { login: string; avatar_url: string; html_url: string } | null; parents: { sha: string; html_url: string }[]; stats?: { total: number; additions: number; deletions: number }; files: Array<{ filename: string; status: string; additions: number; deletions: number; patch?: string; previous_filename?: string }> }}
       highlightData={highlightData}
     />
   );

@@ -2355,7 +2355,7 @@ function InlineCommentDisplay({
 
   const handleCommitSuggestion = (suggestion: string, message: string) => {
     if (!canCommit) return;
-    const startLine = (comment as any).start_line ?? comment.line!;
+    const startLine = comment.start_line ?? comment.line!;
     const endLine = comment.line!;
     setResult(null);
     startTransition(async () => {

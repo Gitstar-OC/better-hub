@@ -37,7 +37,7 @@ export default async function RepoPage({
   ]);
 
   // Filter out PRs from issues list (GitHub API returns PRs in issues endpoint)
-  const openIssues = allIssues.filter((item: any) => !item.pull_request);
+  const openIssues = allIssues.filter((item) => !(item as { pull_request?: unknown }).pull_request);
 
   if (isMaintainer) {
     // Maintainer: fetch commit activity + repo events + user events
@@ -50,8 +50,8 @@ export default async function RepoPage({
 
     // Filter user events to this repo
     const repoFullName = `${owner}/${repo}`;
-    const myRepoEvents = (userEvents as any[]).filter(
-      (e: any) => e.repo?.name === repoFullName
+    const myRepoEvents = (userEvents as Array<{ type: string; actor: { login: string; avatar_url: string } | null; created_at: string; repo?: { name: string }; payload?: Record<string, unknown> }>).filter(
+      (e) => e.repo?.name === repoFullName
     );
 
     return (
@@ -61,19 +61,19 @@ export default async function RepoPage({
           url={`/${owner}/${repo}`}
           title={`${owner}/${repo}`}
           subtitle={repoData.description || "No description"}
-          image={(repoData as any).owner?.avatar_url}
+          image={repoData.owner.avatar_url}
         />
         <RepoOverview
           owner={owner}
           repo={repo}
           repoData={repoData}
           isMaintainer={true}
-          openPRs={openPRs as any}
-          openIssues={openIssues as any}
+          openPRs={openPRs as Array<{ number: number; title: string; user: { login: string; avatar_url: string } | null; created_at: string; pull_request?: unknown; comments: number; draft?: boolean }>}
+          openIssues={openIssues as Array<{ number: number; title: string; user: { login: string; avatar_url: string } | null; created_at: string; pull_request?: unknown; comments: number; reactions?: { total_count: number }; labels?: Array<{ name?: string; color?: string }> }>}
           openPRCount={navCounts.openPrs}
           openIssueCount={navCounts.openIssues}
           commitActivity={commitActivity}
-          repoEvents={repoEvents as any}
+          repoEvents={repoEvents as Array<{ type: string; actor: { login: string; avatar_url: string } | null; created_at: string; repo?: { name: string }; payload?: { action?: string; ref?: string; ref_type?: string; commits?: { sha: string; message: string }[]; pull_request?: { number: number; title: string }; issue?: { number: number; title: string }; comment?: { body: string }; forkee?: { full_name: string }; release?: { tag_name: string; name: string } } }>}
           myRepoEvents={myRepoEvents}
         />
       </div>
@@ -101,15 +101,15 @@ export default async function RepoPage({
         url={`/${owner}/${repo}`}
         title={`${owner}/${repo}`}
         subtitle={repoData.description || "No description"}
-        image={(repoData as any).owner?.avatar_url}
+        image={repoData.owner.avatar_url}
       />
       <RepoOverview
         owner={owner}
         repo={repo}
         repoData={repoData}
         isMaintainer={false}
-        openPRs={openPRs as any}
-        openIssues={openIssues as any}
+        openPRs={openPRs as Array<{ number: number; title: string; user: { login: string; avatar_url: string } | null; created_at: string; pull_request?: unknown; comments: number; draft?: boolean }>}
+        openIssues={openIssues as Array<{ number: number; title: string; user: { login: string; avatar_url: string } | null; created_at: string; pull_request?: unknown; comments: number; reactions?: { total_count: number }; labels?: Array<{ name?: string; color?: string }> }>}
         openPRCount={navCounts.openPrs}
         openIssueCount={navCounts.openIssues}
         readmeSlot={readmeSlot}

@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
 import { getUserRepos } from "@/lib/github";
 
+interface SlimRepo {
+  id: number;
+  full_name: string;
+  description: string | null;
+  language: string | null;
+  stargazers_count: number;
+  owner: { login: string; avatar_url: string } | null;
+}
+
 export async function GET() {
   const repos = await getUserRepos("updated", 100);
-  const slim = (repos as any[]).map((r: any) => ({
+  const repoList = Array.isArray(repos) ? repos : [];
+  const slim: SlimRepo[] = repoList.map((r) => ({
     id: r.id,
     full_name: r.full_name,
     description: r.description ?? null,

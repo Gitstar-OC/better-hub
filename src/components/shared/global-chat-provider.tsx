@@ -22,7 +22,7 @@ export interface InlineContext {
 export interface ChatConfig {
   chatType: "pr" | "issue" | "general";
   contextKey: string;
-  contextBody: Record<string, any>;
+  contextBody: Record<string, unknown>;
   suggestions?: string[];
   placeholder?: string;
   emptyTitle?: string;
@@ -36,7 +36,7 @@ export interface GlobalChatState {
   isWorking: boolean;
   chatType: "pr" | "issue" | "general" | null;
   contextKey: string | null;
-  contextBody: Record<string, any> | null;
+  contextBody: Record<string, unknown> | null;
   suggestions: string[];
   placeholder: string;
   emptyTitle: string;

@@ -20,7 +20,7 @@ export default async function ActivityPage({
     <RepoActivityView
       owner={owner}
       repo={repo}
-      events={events as any}
+      events={events as Array<{ type: string; actor: { login: string; avatar_url: string } | null; created_at: string; repo?: { name: string }; payload?: { action?: string; ref?: string; ref_type?: string; commits?: { sha: string; message: string }[]; pull_request?: { number: number; title: string }; issue?: { number: number; title: string }; comment?: { body: string }; forkee?: { full_name: string }; release?: { tag_name: string; name: string } } }>}
       commitActivity={commitActivity}
     />
   );

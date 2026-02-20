@@ -3,5 +3,5 @@ import { NotificationsContent } from "@/components/notifications/notifications-c
 
 export default async function NotificationsPage() {
   const notifications = await getNotifications(50);
-  return <NotificationsContent notifications={notifications as any} />;
+  return <NotificationsContent notifications={notifications as Array<{ id: string; reason: string; subject: { title: string; type: string; url: string | null }; repository: { full_name: string; html_url: string }; updated_at: string; unread: boolean }>} />;
 }

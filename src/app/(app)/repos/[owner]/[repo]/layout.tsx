@@ -36,8 +36,8 @@ export default async function RepoLayout({
 
   const latestCommit = latestCommits[0] ?? null;
 
-  const showPeopleTab = isOrgRepo && (userOrgs as any[]).some(
-    (org: any) => org.login?.toLowerCase() === owner.toLowerCase()
+  const showPeopleTab = isOrgRepo && (userOrgs as Array<{ login?: string }>).some(
+    (org) => org.login?.toLowerCase() === owner.toLowerCase()
   );
 
   const promptRequestsCount = await countPromptRequests(owner, repoName, "open");
@@ -72,31 +72,35 @@ export default async function RepoLayout({
             isPrivate={repoData.private}
             defaultBranch={repoData.default_branch}
             language={repoData.language}
-            license={repoData.license as any}
+            license={repoData.license as { name: string; spdx_id: string | null } | null}
             pushedAt={repoData.pushed_at ?? ""}
             size={repoData.size ?? 0}
             htmlUrl={repoData.html_url}
             homepage={repoData.homepage ?? null}
-            topics={(repoData as any).topics ?? []}
+            topics={(repoData as { topics?: string[] }).topics ?? []}
             archived={repoData.archived}
             fork={repoData.fork}
-            parent={(repoData as any).parent ? { fullName: (repoData as any).parent.full_name, owner: (repoData as any).parent.owner.login, name: (repoData as any).parent.name } : null}
+            parent={(() => { const p = (repoData as { parent?: { full_name: string; owner: { login: string }; name: string } }).parent; return p ? { fullName: p.full_name, owner: p.owner.login, name: p.name } : null; })()}
             contributors={contributorsData.list}
             contributorsTotalCount={contributorsData.totalCount}
             isStarred={isStarred}
             branches={branches}
-            latestCommit={latestCommit ? {
-              sha: (latestCommit as any).sha,
-              message: (latestCommit as any).commit?.message ?? "",
-              date: (latestCommit as any).commit?.author?.date ?? (latestCommit as any).commit?.committer?.date ?? "",
-              author: (latestCommit as any).author ? {
-                login: (latestCommit as any).author.login,
-                avatarUrl: (latestCommit as any).author.avatar_url,
-              } : (latestCommit as any).commit?.author?.name ? {
-                login: (latestCommit as any).commit.author.name,
-                avatarUrl: "",
-              } : null,
-            } : null}
+            latestCommit={(() => {
+              if (!latestCommit) return null;
+              const c = latestCommit as { sha: string; commit: { message: string; author?: { date?: string; name?: string } | null; committer?: { date?: string } | null }; author?: { login: string; avatar_url: string } | null };
+              return {
+                sha: c.sha,
+                message: c.commit?.message ?? "",
+                date: c.commit?.author?.date ?? c.commit?.committer?.date ?? "",
+                author: c.author ? {
+                  login: c.author.login,
+                  avatarUrl: c.author.avatar_url,
+                } : c.commit?.author?.name ? {
+                  login: c.commit.author.name,
+                  avatarUrl: "",
+                } : null,
+              };
+            })()}
           />
         }
       >
@@ -115,7 +119,7 @@ export default async function RepoLayout({
           owner={owner}
           repo={repoName}
           defaultBranch={repoData.default_branch}
-          tree={treeResult?.truncated ? null : treeResult?.tree ? buildFileTree(treeResult.tree as any) : null}
+          tree={treeResult?.truncated ? null : treeResult?.tree ? buildFileTree(treeResult.tree as { path: string; type: string; size?: number }[]) : null}
           branches={branches}
           tags={tags}
         >

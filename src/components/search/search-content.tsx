@@ -127,9 +127,11 @@ interface UserSearchItem {
   followers?: number;
 }
 
+type SearchItem = CodeSearchItem | RepoSearchItem | IssueSearchItem | UserSearchItem;
+
 interface SearchResponse {
   total_count: number;
-  items: any[];
+  items: SearchItem[];
 }
 
 // --- Highlight helpers ---
@@ -519,8 +521,8 @@ export function SearchContent({
           const data: SearchResponse = await res.json();
           setResults(data);
         }
-      } catch (e: any) {
-        if (e.name !== "AbortError") {
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name !== "AbortError") {
           // silent
         }
       } finally {

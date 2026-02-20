@@ -332,16 +332,16 @@ function ActivityItem({ event }: { event: RepoEvent }) {
           >
             {event.actor?.login}
           </Link>
-          {(event as any).org?.login && (
+          {event.org?.login && (
             <>
               {" "}
               <span className="text-muted-foreground/40">@</span>
               <Link
-                href={`/orgs/${(event as any).org.login}`}
+                href={`/orgs/${event.org.login}`}
                 className="text-muted-foreground/50 hover:underline"
                 onClick={(e) => e.stopPropagation()}
               >
-                {(event as any).org.login}
+                {event.org.login}
               </Link>
             </>
           )}
@@ -538,6 +538,7 @@ interface RepoEvent {
   actor: { login: string; avatar_url: string } | null;
   created_at: string;
   repo?: { name: string };
+  org?: { login: string };
   payload?: {
     action?: string;
     ref?: string;
@@ -549,6 +550,15 @@ interface RepoEvent {
     forkee?: { full_name: string };
     release?: { tag_name: string; name: string };
   };
+}
+
+interface RepoData {
+  description?: string;
+  topics?: string[];
+  stargazers_count?: number;
+  forks_count?: number;
+  subscribers_count?: number;
+  watchers_count?: number;
 }
 
 interface PRItem {
@@ -727,7 +737,7 @@ function HighlightedActivityTicker({ items }: { items: HotItem[] }) {
 export interface RepoOverviewProps {
   owner: string;
   repo: string;
-  repoData: any;
+  repoData: RepoData;
   isMaintainer: boolean;
   openPRs: PRItem[];
   openIssues: IssueItem[];
@@ -761,14 +771,14 @@ export function RepoOverview({
 }: RepoOverviewProps) {
   const base = `/${owner}/${repo}`;
 
-  const infoRow = (repoData.description || (repoData as any).topics?.length > 0) ? (
+  const infoRow = (repoData.description || (repoData.topics?.length ?? 0) > 0) ? (
     <div className="rounded-lg bg-muted/20 p-4">
       {repoData.description && (
         <p className="text-sm text-foreground/80 mb-3">{repoData.description}</p>
       )}
-      {(repoData as any).topics?.length > 0 && (
+      {(repoData.topics?.length ?? 0) > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {(repoData as any).topics.map((topic: string) => (
+          {repoData.topics!.map((topic: string) => (
             <span
               key={topic}
               className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground/70"

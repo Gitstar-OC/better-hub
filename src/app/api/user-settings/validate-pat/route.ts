@@ -1,5 +1,6 @@
 import { Octokit } from "@octokit/rest";
 import { auth } from "@/lib/auth";
+import { getErrorMessage, getErrorStatus } from "@/lib/utils";
 import { headers } from "next/headers";
 
 export async function POST(request: Request) {
@@ -31,10 +32,10 @@ export async function POST(request: Request) {
         reset: rateLimitResp.data.rate.reset,
       },
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return Response.json({
       valid: false,
-      error: e.status === 401 ? "Invalid token" : (e.message ?? "Validation failed"),
+      error: getErrorStatus(e) === 401 ? "Invalid token" : (getErrorMessage(e) ?? "Validation failed"),
     });
   }
 }

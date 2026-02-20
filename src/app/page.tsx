@@ -4,6 +4,7 @@ import { signIn, useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useTheme } from "next-themes";
+import Image from "next/image";
 import { Logo } from "@/components/ui/logo";
 import { HalftoneBackground } from "@/components/ui/halftone-background";
 import { AgentIcon } from "@/components/ui/agent-icon";
@@ -80,24 +81,24 @@ export default function LoginPage() {
               collaboration.
             </h1>
             <svg
-              viewBox="0 0 320 20"
+              viewBox="0 0 320 14"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
               className="w-72 mt-2"
             >
               <path
-                d="M2 16 C100 13, 200 8, 318 2"
+                d="M2 10 C60 9, 160 5, 318 2"
                 stroke="currentColor"
-                strokeWidth="1.2"
+                strokeWidth="0.8"
                 strokeLinecap="round"
-                className="text-foreground/25"
+                className="text-foreground/20"
               />
               <path
-                d="M2 18 C80 15, 180 9, 318 4"
+                d="M2 12.5 C80 11, 180 6.5, 318 4"
                 stroke="currentColor"
-                strokeWidth="1.2"
+                strokeWidth="0.8"
                 strokeLinecap="round"
-                className="text-foreground/25"
+                className="text-foreground/20"
               />
             </svg>
             <p className="text-foreground/55 text-sm leading-relaxed mt-4 max-w-sm">
@@ -126,16 +127,20 @@ export default function LoginPage() {
             {/* Back card (dash2) — rotated and offset to the left */}
             <div className="absolute inset-0 -rotate-2 -translate-x-6 -translate-y-2 origin-bottom-right">
               <div className="rounded-lg border border-foreground/6 overflow-hidden shadow-xl shadow-black/10 opacity-70">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/dash2.png"
+                <Image
+                  src="/dash2.webp"
                   alt="Repository view"
+                  width={1508}
+                  height={852}
+                  priority
                   className="w-full h-auto block dark:hidden"
                 />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/dash2-light.png"
+                <Image
+                  src="/dash2-light.webp"
                   alt="Repository view"
+                  width={1509}
+                  height={851}
+                  priority
                   className="w-full h-auto hidden dark:block"
                 />
               </div>
@@ -144,16 +149,20 @@ export default function LoginPage() {
             {/* Front card — slight counter-rotation */}
             <div className="absolute inset-0 rotate-1 origin-bottom-right z-10">
               <div className="rounded-lg border border-foreground/8 overflow-hidden shadow-2xl shadow-black/20">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/dash1.png"
+                <Image
+                  src="/dash1.webp"
                   alt="Dashboard preview"
+                  width={1508}
+                  height={854}
+                  priority
                   className="w-full h-auto block dark:hidden"
                 />
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/dash1-light.png"
+                <Image
+                  src="/dash1-light.webp"
                   alt="Dashboard preview"
+                  width={1504}
+                  height={849}
+                  priority
                   className="w-full h-auto hidden dark:block"
                 />
               </div>

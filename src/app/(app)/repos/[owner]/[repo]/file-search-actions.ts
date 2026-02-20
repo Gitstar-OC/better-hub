@@ -2,6 +2,11 @@
 
 import { getRepoTree, getFileContent } from "@/lib/github";
 
+interface TreeEntry {
+  type?: string;
+  path?: string;
+}
+
 export async function searchRepoFiles(
   owner: string,
   repo: string,
@@ -12,7 +17,7 @@ export async function searchRepoFiles(
   if (!tree?.tree) return [];
 
   const q = query.toLowerCase();
-  return (tree.tree as any[])
+  return (tree.tree as TreeEntry[])
     .filter(
       (item) =>
         item.type === "blob" && item.path && item.path.toLowerCase().includes(q)
@@ -30,9 +35,10 @@ export async function fetchFileContentForContext(
   const file = await getFileContent(owner, repo, path, ref);
   if (!file) return null;
 
+  const fileData = file as { content?: string };
   const content =
-    typeof (file as any).content === "string"
-      ? (file as any).content
+    typeof fileData.content === "string"
+      ? fileData.content
       : typeof file === "string"
         ? file
         : "";

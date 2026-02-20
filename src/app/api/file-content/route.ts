@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getFileContent } from "@/lib/github";
 import { highlightFullFile } from "@/lib/shiki";
 
+interface FileData {
+  content: string;
+  sha?: string;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const owner = searchParams.get("owner");
@@ -22,15 +27,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "File not found" }, { status: 404 });
   }
 
-  const content = (data as any).content as string;
-  const sha = (data as any).sha as string | undefined;
+  const fileData = data as FileData;
+  const { content, sha } = fileData;
 
   if (highlight) {
     try {
       const tokens = await highlightFullFile(content, path);
       return NextResponse.json({ content, tokens, sha });
     } catch {
-      // Fall back to content without tokens
       return NextResponse.json({ content, sha });
     }
   }

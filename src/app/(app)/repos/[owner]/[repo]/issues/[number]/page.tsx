@@ -20,13 +20,16 @@ export default async function IssueDetailPage({
   const { owner, repo, number: numStr } = await params;
   const issueNumber = parseInt(numStr, 10);
 
-  const [issue, comments, repoData, linkedPRs, currentUser] = await Promise.all([
+  type IssueComment = { id: number; body?: string | null; user: { login: string; avatar_url: string; type?: string } | null; created_at: string; author_association?: string; reactions?: Record<string, unknown> };
+
+  const [issue, rawComments, repoData, linkedPRs, currentUser] = await Promise.all([
     getIssue(owner, repo, issueNumber),
     getIssueComments(owner, repo, issueNumber),
     getRepo(owner, repo),
     getLinkedPullRequests(owner, repo, issueNumber),
     getAuthenticatedUser(),
   ]);
+  const comments = rawComments as IssueComment[];
 
   if (!issue) {
     return (
@@ -52,8 +55,8 @@ export default async function IssueDetailPage({
         title: issue.title,
         body: issue.body ?? "",
         comments: (comments || [])
-          .filter((c: any) => c.body)
-          .map((c: any) => ({
+          .filter((c) => c.body)
+          .map((c) => ({
             id: c.id,
             body: c.body,
             author: c.user?.login ?? "unknown",
@@ -67,7 +70,7 @@ export default async function IssueDetailPage({
     typeof l === "string" ? l : l.name || ""
   ).filter(Boolean);
 
-  const issueComments = (comments || []).map((c: any) => ({
+  const issueComments = (comments || []).map((c) => ({
     author: c.user?.login || "unknown",
     body: c.body || "",
     createdAt: c.created_at,
@@ -80,9 +83,9 @@ export default async function IssueDetailPage({
     user: issue.user,
     body: issue.body || "",
     created_at: issue.created_at,
-    reactions: (issue as any).reactions ?? undefined,
+    reactions: (issue as { reactions?: Record<string, unknown> }).reactions ?? undefined,
   };
-  const commentEntries: IssueTimelineEntry[] = (comments || []).map((c: any) => ({
+  const commentEntries: IssueTimelineEntry[] = (comments || []).map((c) => ({
     type: "comment" as const,
     id: c.id,
     user: c.user,
@@ -94,7 +97,7 @@ export default async function IssueDetailPage({
   // Extract participants
   const participants = extractParticipants([
     issue.user ? { login: issue.user.login, avatar_url: issue.user.avatar_url } : null,
-    ...(comments || []).map((c: any) =>
+    ...(comments || []).map((c) =>
       c.user ? { login: c.user.login, avatar_url: c.user.avatar_url } : null
     ),
   ]);
@@ -143,18 +146,18 @@ export default async function IssueDetailPage({
           repo={repo}
           issueNumber={issueNumber}
           issueState={issue.state}
-          userAvatarUrl={(currentUser as any)?.avatar_url}
-          userName={(currentUser as any)?.login}
+          userAvatarUrl={(currentUser as { avatar_url?: string } | null)?.avatar_url}
+          userName={(currentUser as { login?: string } | null)?.login}
           participants={participants}
         />
       }
       sidebar={
         <IssueSidebar
-          assignees={((issue as any).assignees || []).map((a: any) => ({
+          assignees={((issue as { assignees?: Array<{ login: string; avatar_url: string }> }).assignees || []).map((a) => ({
             login: a.login,
             avatar_url: a.avatar_url,
           }))}
-          milestone={(issue.milestone as any)?.title ?? null}
+          milestone={(issue.milestone as { title?: string } | null)?.title ?? null}
         />
       }
     />

@@ -139,7 +139,7 @@ export function createSuggestionConfig(
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let reactRoot: Root | null = null;
   let containerEl: HTMLDivElement | null = null;
-  let currentProps: any = null;
+  let currentProps: SuggestionProps | null = null;
   let listRef: MentionSuggestionListRef | null = null;
 
   function renderDropdown(items: MentionUser[], loading: boolean) {
@@ -184,7 +184,7 @@ export function createSuggestionConfig(
         if (!res.ok) return;
         const data = await res.json();
         const searchUsers: MentionUser[] = (data.items || []).map(
-          (u: any) => ({
+          (u: { login: string; avatar_url: string }) => ({
             login: u.login,
             avatar_url: u.avatar_url,
           })

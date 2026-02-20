@@ -53,7 +53,8 @@ export function ClientMarkdown({
           },
           pre({ children, node }) {
             // Only strip pre when child has a language class (HighlightedCodeBlock handles its own wrapper)
-            const codeChild = (node?.children as any[])?.find(
+            const nodeChildren = (node?.children ?? []) as Array<{ tagName?: string; properties?: { className?: string[] } }>;
+            const codeChild = nodeChildren.find(
               (c) => c.tagName === "code"
             );
             const hasLang = codeChild?.properties?.className?.some?.(

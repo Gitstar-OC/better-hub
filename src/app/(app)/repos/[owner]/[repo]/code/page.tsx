@@ -31,7 +31,7 @@ export default async function CodePage({
   ]);
 
   const hasReadme = Array.isArray(contents) && contents.some(
-    (item: any) => typeof item.name === "string" && item.name.toLowerCase().startsWith("readme")
+    (item: { name?: string }) => typeof item.name === "string" && item.name.toLowerCase().startsWith("readme")
   );
   const readme = hasReadme ? await getRepoReadme(owner, repo, defaultBranch) : null;
 
@@ -52,7 +52,7 @@ export default async function CodePage({
     if (!branchPRMap.has(ref)) {
       branchPRMap.set(ref, {
         number: pr.number,
-        state: (pr as any).merged_at ? "merged" : "closed",
+        state: (pr as { merged_at?: string | null }).merged_at ? "merged" : "closed",
         user: { login: pr.user?.login ?? "", avatarUrl: pr.user?.avatar_url ?? "" },
       });
     }
@@ -64,7 +64,7 @@ export default async function CodePage({
   }));
 
   const items = Array.isArray(contents)
-    ? contents.map((item: any) => ({
+    ? contents.map((item: { name: string; path: string; type: string; size?: number }) => ({
         name: item.name,
         path: item.path,
         type: item.type === "dir" ? ("dir" as const) : ("file" as const),
@@ -79,7 +79,7 @@ export default async function CodePage({
         url={`/${owner}/${repo}`}
         title={`${owner}/${repo}`}
         subtitle={repoData.description || "No description"}
-        image={(repoData as any).owner?.avatar_url}
+        image={repoData.owner.avatar_url}
       />
       <div className="flex items-center gap-3 mb-3">
         <BranchSelector
@@ -97,7 +97,7 @@ export default async function CodePage({
             currentRef={defaultBranch}
             branches={enrichedBranches}
             defaultBranch={defaultBranch}
-            onDeleteBranch={deleteBranch as any}
+            onDeleteBranch={deleteBranch as (owner: string, repo: string, branch: string) => Promise<{ success: boolean }>}
           />
         </div>
       </div>

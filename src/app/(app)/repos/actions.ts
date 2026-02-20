@@ -1,6 +1,7 @@
 "use server";
 
 import { getOctokit } from "@/lib/github";
+import { getErrorMessage } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 
 export async function starRepo(owner: string, repo: string) {
@@ -10,8 +11,8 @@ export async function starRepo(owner: string, repo: string) {
     await octokit.activity.starRepoForAuthenticatedUser({ owner, repo });
     revalidatePath(`/repos/${owner}/${repo}`);
     return { success: true };
-  } catch (e: any) {
-    return { error: e.message || "Failed to star" };
+  } catch (e: unknown) {
+    return { error: getErrorMessage(e) || "Failed to star" };
   }
 }
 
@@ -22,8 +23,8 @@ export async function unstarRepo(owner: string, repo: string) {
     await octokit.activity.unstarRepoForAuthenticatedUser({ owner, repo });
     revalidatePath(`/repos/${owner}/${repo}`);
     return { success: true };
-  } catch (e: any) {
-    return { error: e.message || "Failed to unstar" };
+  } catch (e: unknown) {
+    return { error: getErrorMessage(e) || "Failed to unstar" };
   }
 }
 
@@ -46,14 +47,14 @@ export async function createRepo(
       auto_init: autoInit || undefined,
       gitignore_template: gitignoreTemplate || undefined,
       license_template: licenseTemplate || undefined,
-    } as any);
+    });
 
     revalidatePath("/dashboard");
     return { success: true, full_name: data.full_name };
-  } catch (err: any) {
+  } catch (e: unknown) {
     return {
       success: false,
-      error: err?.message || "Failed to create repository",
+      error: getErrorMessage(e) || "Failed to create repository",
     };
   }
 }

@@ -52,7 +52,7 @@ function buildGitHubTools(octokit: Octokit, owner: string, repo: string, promptR
             ...(ref ? { ref } : {}),
           });
           if (Array.isArray(data) || data.type !== "file") return { error: "Not a file" };
-          const content = Buffer.from((data as any).content, "base64").toString("utf-8");
+          const content = Buffer.from((data as { content: string }).content, "base64").toString("utf-8");
           return { path, content };
         } catch (e: any) {
           if (e.status === 404) return { error: `File not found: ${path}` };
@@ -195,7 +195,7 @@ function buildGitHubTools(octokit: Octokit, owner: string, repo: string, promptR
           const { data: newTree } = await octokit.git.createTree({
             owner, repo,
             base_tree: baseTreeSha,
-            tree: treeEntries as any,
+            tree: treeEntries as { path: string; mode: string; type: string; sha: string | null }[],
           });
 
           const { data: newCommit } = await octokit.git.createCommit({
@@ -412,8 +412,6 @@ async function processPromptRequestInBackground(
   githubToken: string,
   userId: string,
 ) {
-  console.log(`[PromptProcess] Starting background processing for ${promptRequestId}`);
-
   const apiTools = buildGitHubTools(octokit, owner, repo, promptRequestId);
   const sandboxTools = buildSandboxTools(octokit, githubToken, owner, repo, promptRequestId);
   const { _cleanup, ...sandboxToolsForAI } = sandboxTools;
@@ -437,7 +435,7 @@ async function processPromptRequestInBackground(
       ...["package.json", "README.md"].map(async (path) => {
         const { data } = await octokit.repos.getContent({ owner, repo, path });
         if (Array.isArray(data) || data.type !== "file") return null;
-        const content = Buffer.from((data as any).content, "base64").toString("utf-8");
+        const content = Buffer.from((data as { content: string }).content, "base64").toString("utf-8");
         return { path, content: content.length > 3000 ? content.slice(0, 3000) + "\n...(truncated)" : content };
       }),
     ]);
@@ -512,9 +510,6 @@ ${new Date().toISOString().split("T")[0]}${repoContext}`;
       stopWhen: stepCountIs(50),
       onStepFinish({ toolResults }) {
         const toolNames = toolResults.map(tr => tr.toolName);
-        for (const name of toolNames) {
-          console.log(`[PromptProcess] Tool: ${name}`);
-        }
         const label = toolNames.length > 0 ? toolNames.join(", ") : "thinking";
         void updatePromptRequestProgress(promptRequestId, `Running: ${label}`);
       },
@@ -532,12 +527,10 @@ ${new Date().toISOString().split("T")[0]}${repoContext}`;
     }
 
     await updatePromptRequestProgress(promptRequestId, null);
-    console.log(`[PromptProcess] Finished processing ${promptRequestId}`);
-  } catch (e: any) {
-    console.error(`[PromptProcess] Failed for ${promptRequestId}:`, e.message);
+  } catch (e: unknown) {
     await updatePromptRequestProgress(promptRequestId, null);
     await updatePromptRequestStatus(promptRequestId, "open", {
-      errorMessage: e.message || "Processing failed unexpectedly",
+      errorMessage: e instanceof Error ? e.message : "Processing failed unexpectedly",
     });
   }
 

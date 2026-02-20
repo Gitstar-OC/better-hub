@@ -1,5 +1,6 @@
 import { Octokit } from "@octokit/rest";
 import { auth } from "@/lib/auth";
+import { getErrorMessage, getErrorStatus } from "@/lib/utils";
 import { headers } from "next/headers";
 import {
   getGitHubAccounts,
@@ -25,14 +26,6 @@ export async function GET() {
 
   const accounts = await getGitHubAccounts(session.user.id);
 
-  // Get OAuth login info
-  const ctx = await auth.$context;
-  const betterAuthAccounts = await ctx.internalAdapter.findAccounts(session.user.id);
-  const githubAccount = betterAuthAccounts.find(
-    (a: { providerId: string }) => a.providerId === "github"
-  );
-
-  // Check if any extra account is active
   const hasActiveExtra = accounts.some((a) => a.active);
 
   return Response.json({
@@ -57,7 +50,6 @@ export async function POST(request: Request) {
     return Response.json({ error: "No token provided" }, { status: 400 });
   }
 
-  // Validate PAT by calling GitHub API
   try {
     const octokit = new Octokit({ auth: pat });
     const { data: user } = await octokit.users.getAuthenticated();
@@ -72,9 +64,9 @@ export async function POST(request: Request) {
     return Response.json({
       account: { ...account, pat: maskPat(account.pat) },
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return Response.json(
-      { error: e.status === 401 ? "Invalid token" : (e.message ?? "Validation failed") },
+      { error: getErrorStatus(e) === 401 ? "Invalid token" : (getErrorMessage(e) ?? "Validation failed") },
       { status: 400 }
     );
   }
@@ -100,7 +92,7 @@ export async function PATCH(request: Request) {
   if (!session) return new Response("Unauthorized", { status: 401 });
 
   const body = await request.json();
-  const { accountId } = body; // null = switch to OAuth default
+  const { accountId } = body;
 
   if (accountId !== null && typeof accountId !== "string") {
     return Response.json({ error: "Invalid accountId" }, { status: 400 });
