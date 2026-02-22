@@ -1005,11 +1005,7 @@ async function upsertCacheWithShared<T>(
 	}
 }
 
-async function touchCacheWithShared(
-	userId: string,
-	cacheKey: string,
-	cacheType: string,
-) {
+async function touchCacheWithShared(userId: string, cacheKey: string, cacheType: string) {
 	await touchGithubCacheEntrySyncedAt(userId, cacheKey);
 	if (isShareableCacheType(cacheType)) {
 		touchSharedCacheEntrySyncedAt(cacheKey).catch(() => {});
@@ -1371,7 +1367,11 @@ async function processGitDataSyncJob(
 					rdCached?.etag ?? null,
 				);
 				if (rdRes.notModified) {
-					await touchCacheWithShared(authCtx.userId, rdKey, "repo_readme");
+					await touchCacheWithShared(
+						authCtx.userId,
+						rdKey,
+						"repo_readme",
+					);
 				} else {
 					const rdData = rdRes.data as {
 						content: string;
@@ -1736,7 +1736,13 @@ async function readLocalFirstGitData<T>({
 	if (shareable) {
 		const shared = await getSharedCacheEntry<T>(cacheKey);
 		if (shared) {
-			upsertGithubCacheEntry(authCtx.userId, cacheKey, cacheType, shared.data, shared.etag).catch(() => {});
+			upsertGithubCacheEntry(
+				authCtx.userId,
+				cacheKey,
+				cacheType,
+				shared.data,
+				shared.etag,
+			).catch(() => {});
 			await enqueueGitDataSync(authCtx, jobType, cacheKey, jobPayload);
 			return shared.data;
 		}

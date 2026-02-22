@@ -900,7 +900,6 @@ function HighlightedActivityTicker({ items }: { items: HotItem[] }) {
 	);
 }
 
-
 export interface RepoOverviewProps {
 	owner: string;
 	repo: string;
@@ -1063,12 +1062,7 @@ export function RepoOverview({
 		);
 	}
 
-	const { data: readmeHtml } = useReadme(
-		owner,
-		repo,
-		branch,
-		initialReadmeHtml ?? null,
-	);
+	const { data: readmeHtml } = useReadme(owner, repo, branch, initialReadmeHtml ?? null);
 
 	return (
 		<div className="space-y-4 pb-4">
