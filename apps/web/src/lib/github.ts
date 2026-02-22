@@ -14,6 +14,8 @@ import {
 } from "./github-sync-store";
 import { redis } from "./redis";
 import { all } from "better-all";
+import { computeContributorScore } from "./contributor-score";
+import { getCachedAuthorDossier, setCachedAuthorDossier } from "./repo-data-cache";
 
 export type RepoPermissions = {
 	admin: boolean;
@@ -113,53 +115,12 @@ interface LocalFirstGitReadOptions<T> {
 	authCtx: GitHubAuthContext | null;
 	cacheKey: string;
 	cacheType: string;
-	ttlMs: number;
 	fallback: T;
 	jobType: GitDataSyncJobType;
 	jobPayload: GitDataSyncJobPayload;
 	fetchRemote: (octokit: Octokit) => Promise<T>;
 }
 
-const CACHE_TTL_MS = {
-	userRepos: readEnvMs("GITHUB_SYNC_TTL_USER_REPOS_MS", 60_000),
-	repo: readEnvMs("GITHUB_SYNC_TTL_REPO_MS", 60_000),
-	repoContents: readEnvMs("GITHUB_SYNC_TTL_CONTENTS_MS", 120_000),
-	repoTree: readEnvMs("GITHUB_SYNC_TTL_TREE_MS", 300_000),
-	repoBranches: readEnvMs("GITHUB_SYNC_TTL_BRANCHES_MS", 180_000),
-	repoTags: readEnvMs("GITHUB_SYNC_TTL_TAGS_MS", 300_000),
-	fileContent: readEnvMs("GITHUB_SYNC_TTL_FILE_MS", 120_000),
-	repoReadme: readEnvMs("GITHUB_SYNC_TTL_README_MS", 600_000),
-	authenticatedUser: 300_000,
-	userOrgs: 300_000,
-	org: 300_000,
-	orgRepos: 120_000,
-	notifications: 30_000,
-	searchIssues: 60_000,
-	userEvents: 60_000,
-	starredRepos: 300_000,
-	contributions: 600_000,
-	trendingRepos: 600_000,
-	repoIssues: 60_000,
-	repoPullRequests: 60_000,
-	issue: 300_000,
-	issueComments: 60_000,
-	pullRequest: 60_000,
-	pullRequestFiles: 120_000,
-	pullRequestComments: 60_000,
-	pullRequestReviews: 60_000,
-	pullRequestCommits: 120_000,
-	repoContributors: 300_000,
-	userProfile: 300_000,
-	userPublicRepos: 120_000,
-	userPublicOrgs: 300_000,
-	repoWorkflows: 300_000,
-	repoWorkflowRuns: 60_000,
-	repoNavCounts: 60_000,
-	repoLanguages: 300_000,
-	orgMembers: 300_000,
-	personRepoActivity: 120_000,
-	prBundle: 60_000,
-};
 
 const globalForGithubSync = globalThis as typeof globalThis & {
 	__githubSyncDrainingUsers?: Set<string>;
@@ -215,13 +176,6 @@ function isRateLimitError(error: unknown): { resetAt: number; limit: number; use
 		limit,
 		used: limit - remaining,
 	};
-}
-
-function readEnvMs(name: string, fallbackMs: number): number {
-	const raw = process.env[name];
-	if (!raw) return fallbackMs;
-	const parsed = Number(raw);
-	return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
 }
 
 function normalizeRef(ref?: string): string {
@@ -451,12 +405,6 @@ const getGitHubAuthContext = cache(async (): Promise<GitHubAuthContext | null> =
 		githubUser: session.githubUser,
 	};
 });
-
-function isStale(syncedAt: string, ttlMs: number): boolean {
-	const parsed = Date.parse(syncedAt);
-	if (!Number.isFinite(parsed)) return true;
-	return Date.now() - parsed >= ttlMs;
-}
 
 function getSyncErrorMessage(error: unknown): string {
 	if (typeof error === "object" && error !== null) {
@@ -1690,7 +1638,6 @@ async function readLocalFirstGitData<T>({
 	authCtx,
 	cacheKey,
 	cacheType,
-	ttlMs,
 	fallback,
 	jobType,
 	jobPayload,
@@ -1710,9 +1657,7 @@ async function readLocalFirstGitData<T>({
 
 	const cached = await getGithubCacheEntry<T>(authCtx.userId, cacheKey);
 	if (cached) {
-		if (isStale(cached.syncedAt, ttlMs)) {
-			await enqueueGitDataSync(authCtx, jobType, cacheKey, jobPayload);
-		}
+		await enqueueGitDataSync(authCtx, jobType, cacheKey, jobPayload);
 		return cached.data;
 	}
 
@@ -1751,7 +1696,6 @@ export async function getUserRepos(sort: RepoSort = "updated", perPage = 30) {
 		authCtx,
 		cacheKey,
 		cacheType: "user_repos",
-		ttlMs: CACHE_TTL_MS.userRepos,
 		fallback: [],
 		jobType: "user_repos",
 		jobPayload: { sort, perPage },
@@ -1765,7 +1709,6 @@ export async function getUserOrgs(perPage = 50) {
 		authCtx,
 		cacheKey: buildUserOrgsCacheKey(perPage),
 		cacheType: "user_orgs",
-		ttlMs: CACHE_TTL_MS.userOrgs,
 		fallback: [],
 		jobType: "user_orgs",
 		jobPayload: { perPage },
@@ -1790,7 +1733,6 @@ export async function getOrgRepos(
 		authCtx,
 		cacheKey: buildOrgReposCacheKey(org, sort, type, perPage),
 		cacheType: "org_repos",
-		ttlMs: CACHE_TTL_MS.orgRepos,
 		fallback: [],
 		jobType: "org_repos",
 		jobPayload: { orgName: org, orgSort: sort, orgType: type, perPage },
@@ -1805,7 +1747,6 @@ export async function getOrg(org: string) {
 		authCtx,
 		cacheKey: buildOrgCacheKey(org),
 		cacheType: "org",
-		ttlMs: CACHE_TTL_MS.org,
 		fallback: null,
 		jobType: "org",
 		jobPayload: { orgName: org },
@@ -1819,7 +1760,6 @@ export async function getNotifications(perPage = 20) {
 		authCtx,
 		cacheKey: buildNotificationsCacheKey(perPage),
 		cacheType: "notifications",
-		ttlMs: CACHE_TTL_MS.notifications,
 		fallback: [],
 		jobType: "notifications",
 		jobPayload: { perPage },
@@ -1833,7 +1773,6 @@ export async function searchIssues(query: string, perPage = 20) {
 		authCtx,
 		cacheKey: buildSearchIssuesCacheKey(query, perPage),
 		cacheType: "search_issues",
-		ttlMs: CACHE_TTL_MS.searchIssues,
 		fallback: { items: [], total_count: 0, incomplete_results: false },
 		jobType: "search_issues",
 		jobPayload: { query, perPage },
@@ -1847,7 +1786,6 @@ export async function getUserEvents(username: string, perPage = 30) {
 		authCtx,
 		cacheKey: buildUserEventsCacheKey(username, perPage),
 		cacheType: "user_events",
-		ttlMs: CACHE_TTL_MS.userEvents,
 		fallback: [],
 		jobType: "user_events",
 		jobPayload: { username, perPage },
@@ -1861,7 +1799,6 @@ export async function getContributionData(username: string) {
 		authCtx,
 		cacheKey: buildContributionsCacheKey(username),
 		cacheType: "contributions",
-		ttlMs: CACHE_TTL_MS.contributions,
 		fallback: null,
 		jobType: "contributions",
 		jobPayload: { username },
@@ -1878,7 +1815,6 @@ export async function getStarredRepos(perPage = 10) {
 		authCtx,
 		cacheKey: buildStarredReposCacheKey(perPage),
 		cacheType: "starred_repos",
-		ttlMs: CACHE_TTL_MS.starredRepos,
 		fallback: [],
 		jobType: "starred_repos",
 		jobPayload: { perPage },
@@ -1896,7 +1832,6 @@ export async function getTrendingRepos(
 		authCtx,
 		cacheKey: buildTrendingReposCacheKey(since, perPage, language),
 		cacheType: "trending_repos",
-		ttlMs: CACHE_TTL_MS.trendingRepos,
 		fallback: [],
 		jobType: "trending_repos",
 		jobPayload: { since, perPage, language },
@@ -1913,7 +1848,6 @@ export async function getRepo(owner: string, repo: string) {
 		authCtx,
 		cacheKey,
 		cacheType: "repo",
-		ttlMs: CACHE_TTL_MS.repo,
 		fallback: null,
 		jobType: "repo",
 		jobPayload: { owner, repo },
@@ -1951,7 +1885,6 @@ export async function getRepoContents(owner: string, repo: string, path: string,
 		authCtx,
 		cacheKey,
 		cacheType: "repo_contents",
-		ttlMs: CACHE_TTL_MS.repoContents,
 		fallback: null,
 		jobType: "repo_contents",
 		jobPayload: { owner, repo, path, ref: normalizedRef },
@@ -1980,7 +1913,6 @@ export async function getRepoTree(
 		authCtx,
 		cacheKey,
 		cacheType: "repo_tree",
-		ttlMs: CACHE_TTL_MS.repoTree,
 		fallback: null,
 		jobType: "repo_tree",
 		jobPayload: { owner, repo, treeSha, recursive: recursiveFlag },
@@ -1997,7 +1929,6 @@ export async function getRepoBranches(owner: string, repo: string) {
 		authCtx,
 		cacheKey,
 		cacheType: "repo_branches",
-		ttlMs: CACHE_TTL_MS.repoBranches,
 		fallback: [],
 		jobType: "repo_branches",
 		jobPayload: { owner, repo },
@@ -2013,7 +1944,6 @@ export async function getRepoTags(owner: string, repo: string) {
 		authCtx,
 		cacheKey,
 		cacheType: "repo_tags",
-		ttlMs: CACHE_TTL_MS.repoTags,
 		fallback: [],
 		jobType: "repo_tags",
 		jobPayload: { owner, repo },
@@ -2030,7 +1960,6 @@ export async function getFileContent(owner: string, repo: string, path: string, 
 		authCtx,
 		cacheKey,
 		cacheType: "file_content",
-		ttlMs: CACHE_TTL_MS.fileContent,
 		fallback: null,
 		jobType: "file_content",
 		jobPayload: { owner, repo, path, ref: normalizedRef },
@@ -2054,7 +1983,6 @@ export async function getRepoReadme(owner: string, repo: string, ref?: string) {
 		authCtx,
 		cacheKey,
 		cacheType: "repo_readme",
-		ttlMs: CACHE_TTL_MS.repoReadme,
 		fallback: null,
 		jobType: "repo_readme",
 		jobPayload: { owner, repo, ref: normalizedRef },
@@ -2069,7 +1997,6 @@ export async function getPullRequest(owner: string, repo: string, pullNumber: nu
 		authCtx,
 		cacheKey: buildPullRequestCacheKey(owner, repo, pullNumber),
 		cacheType: "pull_request",
-		ttlMs: CACHE_TTL_MS.pullRequest,
 		fallback: null,
 		jobType: "pull_request",
 		jobPayload: { owner, repo, pullNumber },
@@ -2084,7 +2011,6 @@ export async function getPullRequestFiles(owner: string, repo: string, pullNumbe
 		authCtx,
 		cacheKey: buildPullRequestFilesCacheKey(owner, repo, pullNumber),
 		cacheType: "pull_request_files",
-		ttlMs: CACHE_TTL_MS.pullRequestFiles,
 		fallback: [],
 		jobType: "pull_request_files",
 		jobPayload: { owner, repo, pullNumber },
@@ -2099,7 +2025,6 @@ export async function getPullRequestComments(owner: string, repo: string, pullNu
 		authCtx,
 		cacheKey: buildPullRequestCommentsCacheKey(owner, repo, pullNumber),
 		cacheType: "pull_request_comments",
-		ttlMs: CACHE_TTL_MS.pullRequestComments,
 		fallback: { issueComments: [], reviewComments: [] },
 		jobType: "pull_request_comments",
 		jobPayload: { owner, repo, pullNumber },
@@ -2114,7 +2039,6 @@ export async function getPullRequestReviews(owner: string, repo: string, pullNum
 		authCtx,
 		cacheKey: buildPullRequestReviewsCacheKey(owner, repo, pullNumber),
 		cacheType: "pull_request_reviews",
-		ttlMs: CACHE_TTL_MS.pullRequestReviews,
 		fallback: [],
 		jobType: "pull_request_reviews",
 		jobPayload: { owner, repo, pullNumber },
@@ -2129,7 +2053,6 @@ export async function getPullRequestCommits(owner: string, repo: string, pullNum
 		authCtx,
 		cacheKey: buildPullRequestCommitsCacheKey(owner, repo, pullNumber),
 		cacheType: "pull_request_commits",
-		ttlMs: CACHE_TTL_MS.pullRequestCommits,
 		fallback: [],
 		jobType: "pull_request_commits",
 		jobPayload: { owner, repo, pullNumber },
@@ -2628,7 +2551,6 @@ export async function getPullRequestBundle(
 		authCtx,
 		cacheKey: buildPRBundleCacheKey(owner, repo, pullNumber),
 		cacheType: "pr_bundle",
-		ttlMs: CACHE_TTL_MS.prBundle,
 		fallback: null,
 		jobType: "pr_bundle",
 		jobPayload: { owner, repo, pullNumber },
@@ -2642,7 +2564,6 @@ export async function getIssue(owner: string, repo: string, issueNumber: number)
 		authCtx,
 		cacheKey: buildIssueCacheKey(owner, repo, issueNumber),
 		cacheType: "issue",
-		ttlMs: CACHE_TTL_MS.issue,
 		fallback: null,
 		jobType: "issue",
 		jobPayload: { owner, repo, issueNumber },
@@ -2656,7 +2577,6 @@ export async function getIssueComments(owner: string, repo: string, issueNumber:
 		authCtx,
 		cacheKey: buildIssueCommentsCacheKey(owner, repo, issueNumber),
 		cacheType: "issue_comments",
-		ttlMs: CACHE_TTL_MS.issueComments,
 		fallback: [],
 		jobType: "issue_comments",
 		jobPayload: { owner, repo, issueNumber },
@@ -2763,7 +2683,6 @@ export async function getRepoIssues(
 		authCtx,
 		cacheKey: buildRepoIssuesCacheKey(owner, repo, state),
 		cacheType: "repo_issues",
-		ttlMs: CACHE_TTL_MS.repoIssues,
 		fallback: [],
 		jobType: "repo_issues",
 		jobPayload: { owner, repo, state },
@@ -2934,7 +2853,6 @@ export async function getRepoIssuesPage(
 		authCtx,
 		cacheKey: buildRepoIssuesPageCacheKey(owner, repo),
 		cacheType: "repo_issues_page",
-		ttlMs: CACHE_TTL_MS.repoIssues,
 		fallback,
 		jobType: "repo_issues",
 		jobPayload: { owner, repo, state: "all" },
@@ -3027,7 +2945,6 @@ export async function getRepoPullRequests(
 		authCtx,
 		cacheKey: buildRepoPullRequestsCacheKey(owner, repo, state),
 		cacheType: "repo_pull_requests",
-		ttlMs: CACHE_TTL_MS.repoPullRequests,
 		fallback: [],
 		jobType: "repo_pull_requests",
 		jobPayload: { owner, repo, state },
@@ -4071,7 +3988,6 @@ export async function getRepoNavCounts(owner: string, repo: string, openIssuesAn
 		authCtx,
 		cacheKey: buildRepoNavCountsCacheKey(owner, repo),
 		cacheType: "repo_nav_counts",
-		ttlMs: CACHE_TTL_MS.repoNavCounts,
 		fallback: { openPrs: 0, openIssues: 0, activeRuns: 0 },
 		jobType: "repo_nav_counts",
 		jobPayload: { owner, repo, openIssuesAndPrs },
@@ -4086,7 +4002,6 @@ export async function getRepoWorkflows(owner: string, repo: string) {
 		authCtx,
 		cacheKey: buildRepoWorkflowsCacheKey(owner, repo),
 		cacheType: "repo_workflows",
-		ttlMs: CACHE_TTL_MS.repoWorkflows,
 		fallback: [],
 		jobType: "repo_workflows",
 		jobPayload: { owner, repo },
@@ -4100,7 +4015,6 @@ export async function getRepoWorkflowRuns(owner: string, repo: string, perPage =
 		authCtx,
 		cacheKey: buildRepoWorkflowRunsCacheKey(owner, repo, perPage),
 		cacheType: "repo_workflow_runs",
-		ttlMs: CACHE_TTL_MS.repoWorkflowRuns,
 		fallback: [],
 		jobType: "repo_workflow_runs",
 		jobPayload: { owner, repo, perPage },
@@ -4145,7 +4059,6 @@ export async function getRepoContributors(
 		authCtx,
 		cacheKey: buildRepoContributorsCacheKey(owner, repo, perPage),
 		cacheType: "repo_contributors",
-		ttlMs: CACHE_TTL_MS.repoContributors,
 		fallback: { list: [], totalCount: 0 },
 		jobType: "repo_contributors",
 		jobPayload: { owner, repo, perPage },
@@ -4160,7 +4073,6 @@ export async function getUser(username: string) {
 		authCtx,
 		cacheKey: buildUserProfileCacheKey(username),
 		cacheType: "user_profile",
-		ttlMs: CACHE_TTL_MS.userProfile,
 		fallback: null,
 		jobType: "user_profile",
 		jobPayload: { username },
@@ -4174,7 +4086,6 @@ export async function getUserPublicRepos(username: string, perPage = 30) {
 		authCtx,
 		cacheKey: buildUserPublicReposCacheKey(username, perPage),
 		cacheType: "user_public_repos",
-		ttlMs: CACHE_TTL_MS.userPublicRepos,
 		fallback: [],
 		jobType: "user_public_repos",
 		jobPayload: { username, perPage },
@@ -4189,7 +4100,6 @@ export async function getUserPublicOrgs(username: string) {
 		authCtx,
 		cacheKey: buildUserPublicOrgsCacheKey(username),
 		cacheType: "user_public_orgs",
-		ttlMs: CACHE_TTL_MS.userPublicOrgs,
 		fallback: [],
 		jobType: "user_public_orgs",
 		jobPayload: { username },
@@ -4203,7 +4113,6 @@ export async function getOrgMembers(org: string, perPage = 100) {
 		authCtx,
 		cacheKey: buildOrgMembersCacheKey(org, perPage),
 		cacheType: "org_members",
-		ttlMs: CACHE_TTL_MS.orgMembers,
 		fallback: [],
 		jobType: "org_members",
 		jobPayload: { orgName: org, perPage },
@@ -4744,7 +4653,6 @@ export async function getPersonRepoActivity(
 		authCtx,
 		cacheKey: buildPersonRepoActivityCacheKey(owner, repo, username),
 		cacheType: "person_repo_activity",
-		ttlMs: CACHE_TTL_MS.personRepoActivity,
 		fallback: { commits: [], prs: [], issues: [], reviews: [] },
 		jobType: "person_repo_activity",
 		jobPayload: { owner, repo, username },
@@ -4782,3 +4690,180 @@ export async function getCommit(owner: string, repo: string, ref: string) {
 	const { data } = await octokit.repos.getCommit({ owner, repo, ref });
 	return data;
 }
+
+export interface AuthorDossierResult {
+	author: {
+		login: string;
+		name: string | null;
+		avatar_url: string;
+		bio: string | null;
+		company: string | null;
+		location: string | null;
+		blog: string | null;
+		twitter_username: string | null;
+		public_repos: number;
+		followers: number;
+		following: number;
+		created_at: string;
+		type: string;
+	};
+	orgs: { login: string; avatar_url: string }[];
+	topRepos: {
+		name: string;
+		full_name: string;
+		stargazers_count: number;
+		language: string | null;
+	}[];
+	isOrgMember: boolean;
+	score: ReturnType<typeof computeContributorScore>;
+	contributionCount: number;
+	repoActivity: {
+		commits: number;
+		prs: number;
+		reviews: number;
+		issues: number;
+	};
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+export async function getAuthorDossier(
+	owner: string,
+	repo: string,
+	authorLogin: string,
+): Promise<AuthorDossierResult | null> {
+	try {
+		const cached = await getCachedAuthorDossier<AuthorDossierResult>(owner, repo, authorLogin);
+		if (cached) return cached;
+
+		const token = await getGitHubToken();
+		if (!token) return null;
+
+		const slug = `${owner}/${repo}`;
+		const query = `
+			query($login: String!) {
+				user(login: $login) {
+					login
+					name
+					avatarUrl
+					bio
+					company
+					location
+					websiteUrl
+					twitterUsername
+					repositories { totalCount }
+					followers { totalCount }
+					following { totalCount }
+					createdAt
+					__typename
+					topRepositories(first: 6, orderBy: {field: STARGAZERS, direction: DESC}) {
+						nodes { name nameWithOwner stargazerCount primaryLanguage { name } }
+					}
+					organizations(first: 10) {
+						nodes { login avatarUrl }
+					}
+				}
+				openPrs: search(query: "repo:${slug} author:${authorLogin} type:pr is:open", type: ISSUE, first: 0) { issueCount }
+				mergedPrs: search(query: "repo:${slug} author:${authorLogin} type:pr is:merged", type: ISSUE, first: 0) { issueCount }
+				closedPrs: search(query: "repo:${slug} author:${authorLogin} type:pr is:unmerged is:closed", type: ISSUE, first: 0) { issueCount }
+				issues: search(query: "repo:${slug} author:${authorLogin} type:issue", type: ISSUE, first: 0) { issueCount }
+				reviews: search(query: "repo:${slug} reviewed-by:${authorLogin} type:pr", type: ISSUE, first: 0) { issueCount }
+			}
+		`;
+
+		const response = await fetch("https://api.github.com/graphql", {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ query, variables: { login: authorLogin } }),
+			signal: AbortSignal.timeout(8_000),
+		});
+
+		if (!response.ok) return null;
+		const json = await response.json();
+		const u = json.data?.user;
+		if (!u) return null;
+
+		const orgs: { login: string; avatar_url: string }[] =
+			(u.organizations?.nodes ?? []).map((o: any) => ({
+				login: o.login,
+				avatar_url: o.avatarUrl,
+			}));
+		const topRepos = (u.topRepositories?.nodes ?? []).map((r: any) => ({
+			name: r.name,
+			full_name: r.nameWithOwner,
+			stargazers_count: r.stargazerCount ?? 0,
+			language: r.primaryLanguage?.name ?? null,
+		}));
+		const isOrgMember = orgs.some(
+			(o) => o.login?.toLowerCase() === owner.toLowerCase(),
+		);
+
+		const openPrs = json.data?.openPrs?.issueCount ?? 0;
+		const mergedPrs = json.data?.mergedPrs?.issueCount ?? 0;
+		const closedPrs = json.data?.closedPrs?.issueCount ?? 0;
+		const totalPrs = openPrs + mergedPrs + closedPrs;
+		const issueCount = json.data?.issues?.issueCount ?? 0;
+		const reviewCount = json.data?.reviews?.issueCount ?? 0;
+
+		const prsInRepo: { state: string }[] = [
+			...Array(mergedPrs).fill({ state: "merged" }),
+			...Array(closedPrs).fill({ state: "closed" }),
+			...Array(openPrs).fill({ state: "open" }),
+		];
+
+		const contributionCount = mergedPrs + reviewCount;
+		const isContributor = contributionCount > 0;
+
+		const score = computeContributorScore({
+			followers: u.followers?.totalCount ?? 0,
+			publicRepos: u.repositories?.totalCount ?? 0,
+			accountCreated: u.createdAt ?? "",
+			commitsInRepo: mergedPrs,
+			prsInRepo,
+			reviewsInRepo: reviewCount,
+			isContributor,
+			contributionCount,
+			isOrgMember,
+			isOwner: authorLogin.toLowerCase() === owner.toLowerCase(),
+			topRepoStars: topRepos.map((r: any) => r.stargazers_count),
+		});
+
+		const result = {
+			author: {
+				login: u.login,
+				name: u.name,
+				avatar_url: u.avatarUrl,
+				bio: u.bio,
+				company: u.company,
+				location: u.location,
+				blog: u.websiteUrl,
+				twitter_username: u.twitterUsername,
+				public_repos: u.repositories?.totalCount ?? 0,
+				followers: u.followers?.totalCount ?? 0,
+				following: u.following?.totalCount ?? 0,
+				created_at: u.createdAt,
+				type: u.__typename === "Bot" ? "Bot" : "User",
+			},
+			orgs,
+			topRepos: topRepos.slice(0, 3),
+			isOrgMember,
+			score,
+			contributionCount,
+			repoActivity: {
+				commits: mergedPrs,
+				prs: totalPrs,
+				reviews: reviewCount,
+				issues: issueCount,
+			},
+		};
+
+		await setCachedAuthorDossier(owner, repo, authorLogin, result);
+		return result;
+	} catch (e) {
+		console.error("[getAuthorDossier] failed:", e);
+		return null;
+	}
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */

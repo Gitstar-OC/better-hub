@@ -7,6 +7,7 @@ import { waitUntil } from "@vercel/functions";
 import { all } from "better-all";
 import { headers } from "next/headers";
 import { cache } from "react";
+import { dash } from "@better-auth/infra";
 import { createHash } from "@better-auth/utils/hash";
 
 async function getOctokitUser(token: string) {
@@ -25,6 +26,7 @@ export const auth = betterAuth({
 	database: prismaAdapter(prisma, {
 		provider: "postgresql",
 	}),
+	plugins: [dash()],
 	user: {
 		additionalFields: {
 			githubPat: {

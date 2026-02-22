@@ -12,7 +12,9 @@
 	"dependencies": {
 		"@ai-sdk/anthropic": "^3.0.44",
 		"@ai-sdk/react": "^3.0.88",
+		"@better-auth/infra": "^0.1.7",
 		"@better-auth/utils": "^0.3.1",
+		"@daytonaio/sdk": "^0.18.0",
 		"@mixedbread-ai/sdk": "^2.2.11",
 		"@octokit/rest": "^22.0.1",
 		"@openrouter/ai-sdk-provider": "^2.2.3",
@@ -34,7 +36,6 @@
 		"@tiptap/suggestion": "^3.19.0",
 		"@upstash/redis": "^1.36.2",
 		"@vercel/functions": "^3.4.2",
-		"@daytonaio/sdk": "^0.18.0",
 		"ai": "^6.0.86",
 		"better-all": "^0.0.7",
 		"better-auth": "^1.4.18",

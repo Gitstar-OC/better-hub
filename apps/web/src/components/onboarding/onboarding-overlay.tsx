@@ -247,10 +247,6 @@ export function OnboardingOverlay({
 							Hope you like it.
 						</p>
 
-						<p className="text-[13px] sm:text-[14px] text-white/40 mt-4 ob-fade-up-d5">
-							— Bereket
-						</p>
-
 						<button
 							onClick={dismiss}
 							className="group mt-7 inline-flex items-center gap-2.5 px-5 py-2 rounded-sm bg-white text-black text-[13px] font-medium hover:bg-white/90 transition-all duration-300 cursor-pointer ob-fade-up-d6"

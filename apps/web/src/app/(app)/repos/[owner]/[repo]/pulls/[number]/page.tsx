@@ -7,7 +7,9 @@ import {
 	getOctokit,
 	fetchCheckStatusForRef,
 	getCachedCheckStatus,
+	getAuthorDossier,
 	type CheckStatus,
+	type AuthorDossierResult,
 } from "@/lib/github";
 import { extractParticipants } from "@/lib/github-utils";
 import { highlightDiffLines, type SyntaxToken } from "@/lib/shiki";
@@ -24,8 +26,7 @@ import { PRMergePanel } from "@/components/pr/pr-merge-panel";
 import { PRCommentForm } from "@/components/pr/pr-comment-form";
 import { PRReviewForm } from "@/components/pr/pr-review-form";
 import { PRConflictResolver } from "@/components/pr/pr-conflict-resolver";
-import { LazyAuthorDossier } from "@/components/pr/pr-author-dossier-lazy";
-import { fetchAuthorDossier } from "../pr-actions";
+import { PRAuthorDossier } from "@/components/pr/pr-author-dossier";
 import { ChatPageActivator } from "@/components/shared/chat-page-activator";
 import { TrackView } from "@/components/shared/track-view";
 import { auth } from "@/lib/auth";
@@ -92,7 +93,7 @@ export default async function PRDetailPage({
 	const canTriage = canWrite || permissions.triage;
 	const isOpen = pr.state === "open" && !pr.merged_at;
 
-	const { checkStatus: checkStatusResult, prPinned } = await all({
+	const { checkStatus: checkStatusResult, prPinned, authorDossier } = await all({
 		checkStatus: async () => {
 			if (!isOpen) return undefined;
 			const cached = await getCachedCheckStatus(owner, repo, pullNumber);
@@ -109,9 +110,14 @@ export default async function PRDetailPage({
 			session?.user?.id
 				? isItemPinned(session.user.id, owner, repo, `/${owner}/${repo}/pulls/${pullNumber}`)
 				: Promise.resolve(false),
+		authorDossier: () =>
+			pr.user?.login
+				? getAuthorDossier(owner, repo, pr.user.login).catch(() => null)
+				: Promise.resolve(null),
 	});
 
 	const checkStatus = checkStatusResult as CheckStatus | undefined;
+	const dossier = authorDossier as AuthorDossierResult | null;
 
 	// Fire-and-forget: embed PR content for semantic search
 	if (session?.user?.id) {
@@ -481,17 +487,16 @@ export default async function PRDetailPage({
 				}
 				conversationPanel={
 					<>
-						{pr.user?.login && (
-							<LazyAuthorDossier
-								owner={owner}
-								repo={repo}
-								authorLogin={pr.user.login}
+						{dossier && (
+							<PRAuthorDossier
+								author={dossier.author}
+								orgs={dossier.orgs}
+								topRepos={dossier.topRepos}
+								isOrgMember={dossier.isOrgMember}
+								score={dossier.score}
+								contributionCount={dossier.contributionCount}
+								repoActivity={dossier.repoActivity}
 								openedAt={pr.created_at}
-								onFetch={
-									fetchAuthorDossier as unknown as Parameters<
-										typeof LazyAuthorDossier
-									>[0]["onFetch"]
-								}
 							/>
 						)}
 						<PRConversation

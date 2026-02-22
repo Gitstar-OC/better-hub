@@ -3,16 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-	LogOut,
-	UserPlus,
-	Settings,
-	Check,
-	X,
-	Loader2,
-	ExternalLink,
-	KeyRound,
-} from "lucide-react";
+import { LogOut, ExternalLink, Search } from "lucide-react";
 import dynamic from "next/dynamic";
 
 const CommandMenu = dynamic(() => import("@/components/command-menu").then((m) => m.CommandMenu));
@@ -115,50 +106,24 @@ export function AppNavbar({ session }: AppNavbarProps) {
 												session
 													.user
 													.name
-											}
-										</span>
-									</div>
-								</div>
-								<DropdownMenuSeparator />
-
-								<DropdownMenuGroup>
-									<DropdownMenuItem className="text-[11px] gap-2 h-7">
-										<img
-											src={
-												session
-													.user
-													.image ||
-												""
-											}
-											alt=""
-											className="w-4 h-4 rounded-full shrink-0"
-										/>
-										<span className="flex-1 truncate">
+											}{" "}
+											(@
 											{
 												session
 													.githubUser
 													.login
 											}
-										</span>
-									</DropdownMenuItem>
-								</DropdownMenuGroup>
-								<DropdownMenuSeparator />
-
-								{session.user.name && (
-									<DropdownMenuItem
-										onClick={() =>
-											window.open(
-												`https://github.com/${session.user.name}`,
-												"_blank",
 											)
-										}
-										className="text-[11px] gap-2 h-7"
-									>
-										<ExternalLink className="w-3.5 h-3.5" />
-										GitHub profile
-									</DropdownMenuItem>
-								)}
-
+										</span>
+										<span className="text-[11px] font-medium truncate">
+											{
+												session
+													.user
+													.email
+											}
+										</span>
+									</div>
+								</div>
 								<DropdownMenuSeparator />
 
 								<DropdownMenuItem
@@ -173,7 +138,7 @@ export function AppNavbar({ session }: AppNavbarProps) {
 												},
 										})
 									}
-									className="text-[11px] gap-2 h-7 text-destructive focus:text-destructive"
+									className="text-[11px] gap-2 h-7 "
 								>
 									<LogOut className="w-3.5 h-3.5" />
 									Sign out

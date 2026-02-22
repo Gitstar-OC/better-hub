@@ -21,7 +21,6 @@ export interface GithubSyncJob<TPayload = unknown> {
 
 const MAX_ATTEMPTS = 8;
 const RUNNING_JOB_TIMEOUT_MS = 10 * 60 * 1000;
-const REDIS_CACHE_TTL_SECONDS = 86400; // 24h auto-cleanup
 
 function redisKey(userId: string, cacheKey: string): string {
 	return `gh:${userId}:${cacheKey}`;
@@ -48,7 +47,7 @@ export async function upsertGithubCacheEntry<T>(
 ) {
 	const now = new Date().toISOString();
 	const entry: GithubCacheEntry<T> = { data, syncedAt: now, etag };
-	await redis.set(redisKey(userId, cacheKey), entry, { ex: REDIS_CACHE_TTL_SECONDS });
+	await redis.set(redisKey(userId, cacheKey), entry);
 }
 
 export async function touchGithubCacheEntrySyncedAt(userId: string, cacheKey: string) {

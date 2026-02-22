@@ -158,3 +158,17 @@ export async function getCachedOverviewCI<T>(owner: string, repo: string): Promi
 export async function setCachedOverviewCI<T>(owner: string, repo: string, data: T): Promise<void> {
 	await redis.set(repoKey(owner, repo, "overview_ci"), data);
 }
+
+// --- Author dossier cache (per author per repo) ---
+
+function authorDossierKey(owner: string, repo: string, login: string): string {
+	return `author_dossier:${owner.toLowerCase()}/${repo.toLowerCase()}/${login.toLowerCase()}`;
+}
+
+export async function getCachedAuthorDossier<T>(owner: string, repo: string, login: string): Promise<T | null> {
+	return redis.get<T>(authorDossierKey(owner, repo, login));
+}
+
+export async function setCachedAuthorDossier<T>(owner: string, repo: string, login: string, data: T): Promise<void> {
+	await redis.set(authorDossierKey(owner, repo, login), data);
+}
