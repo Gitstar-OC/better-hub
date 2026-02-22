@@ -211,7 +211,7 @@ function getEventDescription(event: RepoEvent): {
 	switch (event.type) {
 		case "PushEvent": {
 			const branch = p?.ref?.replace("refs/heads/", "") ?? "";
-			const commitCount = p?.commits?.length ?? 0;
+			const commitCount = p?.size ?? p?.commits?.length ?? 0;
 			const firstCommit = p?.commits?.[0];
 			const firstMsg = firstCommit?.message?.split("\n")[0] ?? "";
 			const commitHref =
@@ -220,8 +220,12 @@ function getEventDescription(event: RepoEvent): {
 					: base
 						? `${base}/commits`
 						: null;
+			const verb =
+				commitCount > 0
+					? `pushed ${commitCount} commit${commitCount !== 1 ? "s" : ""} to ${branch}`
+					: `pushed to ${branch}`;
 			return {
-				verb: `pushed ${commitCount} commit${commitCount !== 1 ? "s" : ""} to ${branch}`,
+				verb,
 				detail: firstMsg,
 				href: commitHref,
 			};
@@ -551,6 +555,7 @@ interface RepoEvent {
 		action?: string;
 		ref?: string;
 		ref_type?: string;
+		size?: number;
 		commits?: { sha: string; message: string }[];
 		pull_request?: { number: number; title: string };
 		issue?: { number: number; title: string };
