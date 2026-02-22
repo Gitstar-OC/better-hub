@@ -121,7 +121,6 @@ interface LocalFirstGitReadOptions<T> {
 	fetchRemote: (octokit: Octokit) => Promise<T>;
 }
 
-
 const globalForGithubSync = globalThis as typeof globalThis & {
 	__githubSyncDrainingUsers?: Set<string>;
 };
@@ -2224,6 +2223,7 @@ export interface PRBundleData {
 		created_at: string;
 		user: { login: string; avatar_url: string; type?: string } | null;
 		pull_request_review_id: number;
+		reactions: ReactionSummary | undefined;
 	}[];
 	reviews: {
 		id: number;
@@ -2303,6 +2303,10 @@ const PR_BUNDLE_QUERY = `
                 originalLine
                 createdAt
                 author { __typename login avatarUrl }
+                reactionGroups {
+                  content
+                  reactors { totalCount }
+                }
               }
             }
           }
@@ -2449,6 +2453,7 @@ function transformGraphQLPRBundle(node: Record<string, any>): PRBundleData {
 						}
 					: null,
 				pull_request_review_id: reviewId,
+				reactions: mapReactionGroups(rc.reactionGroups),
 			});
 		}
 		return {
@@ -2777,7 +2782,7 @@ function mapGraphQLIssueNode(node: Record<string, any>): RepoIssueNode {
 		number: node.number,
 		title: node.title,
 		state: (node.state as string).toLowerCase(),
-		state_reason: node.stateReason ? stateReasonMap[node.stateReason] ?? null : null,
+		state_reason: node.stateReason ? (stateReasonMap[node.stateReason] ?? null) : null,
 		updated_at: node.updatedAt,
 		created_at: node.createdAt,
 		closed_at: node.closedAt ?? null,
@@ -2838,10 +2843,7 @@ function buildRepoIssuesPageCacheKey(owner: string, repo: string): string {
 	return `repo_issues_page:${normalizeRepoKey(owner, repo)}`;
 }
 
-export async function getRepoIssuesPage(
-	owner: string,
-	repo: string,
-): Promise<RepoIssuesPageData> {
+export async function getRepoIssuesPage(owner: string, repo: string): Promise<RepoIssuesPageData> {
 	const authCtx = await getGitHubAuthContext();
 	const fallback: RepoIssuesPageData = {
 		openIssues: [],
@@ -3061,7 +3063,10 @@ function mapGraphQLPRNode(pr: Record<string, unknown>) {
 		(
 			pr.reviewRequests as {
 				nodes: {
-					requestedReviewer: { login: string; avatarUrl: string } | null;
+					requestedReviewer: {
+						login: string;
+						avatarUrl: string;
+					} | null;
 				}[];
 			}
 		)?.nodes ?? []
@@ -3122,7 +3127,12 @@ export async function getRepoPullRequestsWithStats(
 	owner: string,
 	repo: string,
 	state: "open" | "closed" | "all" = "open",
-	opts?: { includeCounts?: boolean; previewClosed?: number; perPage?: number; cursor?: string | null },
+	opts?: {
+		includeCounts?: boolean;
+		previewClosed?: number;
+		perPage?: number;
+		cursor?: string | null;
+	},
 ): Promise<PRPageResult> {
 	const token = await getGitHubToken();
 	if (!token) return EMPTY_PAGE_RESULT;
@@ -3206,11 +3216,21 @@ export async function getRepoPullRequestsWithStats(
 
 		const mergedPreview =
 			previewCount > 0
-				? ((repo_data.mergedPreview?.nodes ?? []) as Record<string, unknown>[]).map(mapGraphQLPRNode)
+				? (
+						(repo_data.mergedPreview?.nodes ?? []) as Record<
+							string,
+							unknown
+						>[]
+					).map(mapGraphQLPRNode)
 				: [];
 		const closedPreview =
 			previewCount > 0
-				? ((repo_data.closedPreview?.nodes ?? []) as Record<string, unknown>[]).map(mapGraphQLPRNode)
+				? (
+						(repo_data.closedPreview?.nodes ?? []) as Record<
+							string,
+							unknown
+						>[]
+					).map(mapGraphQLPRNode)
 				: [];
 
 		return { prs, pageInfo, counts, mergedPreview, closedPreview };
@@ -3524,7 +3544,11 @@ export async function getCachedCheckStatus(
 	return null;
 }
 
-export async function prefetchPRData(owner: string, repo: string, opts?: { prefetchIssues?: boolean }) {
+export async function prefetchPRData(
+	owner: string,
+	repo: string,
+	opts?: { prefetchIssues?: boolean },
+) {
 	try {
 		const rKey = checkStatusRedisKey(owner, repo);
 		const cached = await redis.get(rKey);
@@ -3532,7 +3556,13 @@ export async function prefetchPRData(owner: string, repo: string, opts?: { prefe
 			? Promise.resolve()
 			: getRepoPullRequestsWithStats(owner, repo, "open").then(({ prs }) =>
 					prs.length > 0
-						? batchFetchCheckStatuses(owner, repo, prs.map((pr) => ({ number: pr.number }))).then(() => {})
+						? batchFetchCheckStatuses(
+								owner,
+								repo,
+								prs.map((pr) => ({
+									number: pr.number,
+								})),
+							).then(() => {})
 						: undefined,
 				);
 
@@ -4407,8 +4437,7 @@ async function fetchRepoPageDataGraphQL(
 	const r = json.data?.repository;
 	if (!r) return null;
 
-	const viewerIsOrgMember: boolean =
-		json.data?.organization?.viewerIsAMember ?? false;
+	const viewerIsOrgMember: boolean = json.data?.organization?.viewerIsAMember ?? false;
 
 	const languages: Record<string, number> = {};
 	for (const edge of r.languages?.edges ?? []) {
@@ -4732,7 +4761,11 @@ export async function getAuthorDossier(
 	authorLogin: string,
 ): Promise<AuthorDossierResult | null> {
 	try {
-		const cached = await getCachedAuthorDossier<AuthorDossierResult>(owner, repo, authorLogin);
+		const cached = await getCachedAuthorDossier<AuthorDossierResult>(
+			owner,
+			repo,
+			authorLogin,
+		);
 		if (cached) return cached;
 
 		const token = await getGitHubToken();
@@ -4785,11 +4818,12 @@ export async function getAuthorDossier(
 		const u = json.data?.user;
 		if (!u) return null;
 
-		const orgs: { login: string; avatar_url: string }[] =
-			(u.organizations?.nodes ?? []).map((o: any) => ({
-				login: o.login,
-				avatar_url: o.avatarUrl,
-			}));
+		const orgs: { login: string; avatar_url: string }[] = (
+			u.organizations?.nodes ?? []
+		).map((o: any) => ({
+			login: o.login,
+			avatar_url: o.avatarUrl,
+		}));
 		const topRepos = (u.topRepositories?.nodes ?? []).map((r: any) => ({
 			name: r.name,
 			full_name: r.nameWithOwner,
