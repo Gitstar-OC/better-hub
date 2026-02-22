@@ -4313,6 +4313,10 @@ export async function getLanguages(owner: string, repo: string): Promise<Record<
 
 // --- Combined repo page data via single GraphQL call ---
 
+export type RepoPageDataResult =
+	| { success: true; data: RepoPageData }
+	| { success: false; error: string };
+
 export interface RepoPageData {
 	repoData: {
 		description?: string;
@@ -4434,8 +4438,23 @@ async function fetchRepoPageDataGraphQL(
 
 	if (!response.ok) throw new Error(`GraphQL request failed: ${response.status}`);
 	const json = await response.json();
+
+	if (json.errors?.length) {
+		const errorMessages = json.errors
+			.map((e: { message: string }) => e.message)
+			.join("; ");
+		console.error(
+			`[fetchRepoPageDataGraphQL] GitHub API error for ${owner}/${repo}:`,
+			errorMessages,
+		);
+		throw new Error(errorMessages);
+	}
+
 	const r = json.data?.repository;
-	if (!r) return null;
+	if (!r) {
+		console.warn(`[fetchRepoPageDataGraphQL] Repository not found: ${owner}/${repo}`);
+		return null;
+	}
 
 	const viewerIsOrgMember: boolean = json.data?.organization?.viewerIsAMember ?? false;
 
@@ -4515,10 +4534,10 @@ async function fetchRepoPageDataGraphQL(
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 export const getRepoPageData = cache(
-	async (owner: string, repo: string): Promise<RepoPageData | null> => {
+	async (owner: string, repo: string): Promise<RepoPageDataResult> => {
 		const { getCachedRepoPageData } = await import("@/lib/repo-data-cache-vc");
 		const cached = await getCachedRepoPageData<RepoPageData>(owner, repo);
-		if (cached) return cached;
+		if (cached) return { success: true, data: cached };
 
 		return fetchAndCacheRepoPageData(owner, repo);
 	},
@@ -4527,13 +4546,13 @@ export const getRepoPageData = cache(
 export async function fetchAndCacheRepoPageData(
 	owner: string,
 	repo: string,
-): Promise<RepoPageData | null> {
+): Promise<RepoPageDataResult> {
 	const authCtx = await getGitHubAuthContext();
-	if (!authCtx) return null;
+	if (!authCtx) return { success: false, error: "Not authenticated" };
 
 	try {
 		const result = await fetchRepoPageDataGraphQL(authCtx.token, owner, repo);
-		if (!result) return null;
+		if (!result) return { success: false, error: "Repository not found" };
 
 		const { setCachedRepoPageData } = await import("@/lib/repo-data-cache");
 		const navCountsKey = buildRepoNavCountsCacheKey(owner, repo);
@@ -4555,9 +4574,11 @@ export async function fetchAndCacheRepoPageData(
 			cacheDefaultBranch(owner, repo, result.repoData.default_branch),
 		]);
 
-		return result;
-	} catch {
-		return null;
+		return { success: true, data: result };
+	} catch (error) {
+		console.error(`[fetchAndCacheRepoPageData] Failed for ${owner}/${repo}:`, error);
+		const message = error instanceof Error ? error.message : "Unknown error";
+		return { success: false, error: message };
 	}
 }
 
@@ -4569,7 +4590,8 @@ export async function getRepoOverviewData(
 	languages: Record<string, number>;
 }> {
 	const result = await getRepoPageData(owner, repo);
-	if (result) return { navCounts: result.navCounts, languages: result.languages };
+	if (result.success)
+		return { navCounts: result.data.navCounts, languages: result.data.languages };
 	return {
 		navCounts: { openPrs: 0, openIssues: 0, activeRuns: 0 },
 		languages: {},

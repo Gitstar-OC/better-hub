@@ -22,10 +22,10 @@ export default async function RepoPage({
 	const pageDataPromise = getRepoPageData(owner, repo);
 	const readmePromise = getCachedReadmeHtml(owner, repo);
 
-	const pageData = await pageDataPromise;
-	if (!pageData) return null;
+	const pageDataResult = await pageDataPromise;
+	if (!pageDataResult.success) return null;
 
-	const { repoData, navCounts } = pageData;
+	const { repoData, navCounts } = pageDataResult.data;
 	const { permissions } = repoData;
 	const isMaintainer = permissions.push || permissions.admin || permissions.maintain;
 
