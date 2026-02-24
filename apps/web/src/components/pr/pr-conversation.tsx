@@ -213,6 +213,19 @@ export async function PRConversation({
 											/>
 										);
 									}
+									if (
+										entry.type ===
+										"state_change"
+									) {
+										return (
+											<StateChangeEvent
+												key={`state-${entry.id}`}
+												entry={
+													entry
+												}
+											/>
+										);
+									}
 									return (
 										<ChatMessage
 											key={
