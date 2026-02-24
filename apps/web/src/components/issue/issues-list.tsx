@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useTransition, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -88,7 +89,10 @@ export function IssuesList({
 		author: string,
 	) => Promise<{ open: Issue[]; closed: Issue[] }>;
 }) {
-	const [state, setState] = useState<TabState>("open");
+	const searchParams = useSearchParams();
+	const tabParam = searchParams.get("tab");
+	const initialTab: TabState = tabParam === "closed" || tabParam === "not_planned" ? tabParam : "open";
+	const [state, setState] = useState<TabState>(initialTab);
 	const [search, setSearch] = useState("");
 	const [sort, setSort] = useState<SortType>("updated");
 	const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
@@ -972,7 +976,16 @@ export function IssuesList({
 					].map((tab) => (
 						<button
 							key={tab.key}
-							onClick={() => setState(tab.key)}
+							onClick={() => {
+									setState(tab.key);
+									const url = new URL(window.location.href);
+									if (tab.key === "open") {
+										url.searchParams.delete("tab");
+									} else {
+										url.searchParams.set("tab", tab.key);
+									}
+									window.history.replaceState(null, "", url.toString());
+								}}
 							className={cn(
 								"relative flex items-center gap-1.5 px-3 pb-2.5 pt-1 text-[12px] transition-colors cursor-pointer",
 								state === tab.key

@@ -4539,11 +4539,15 @@ async function fetchRepoPageDataGraphQL(
 		const errorMessages = json.errors
 			.map((e: { message: string }) => e.message)
 			.join("; ");
-		console.error(
-			`[fetchRepoPageDataGraphQL] GitHub API error for ${owner}/${repo}:`,
-			errorMessages,
-		);
-		throw new Error(errorMessages);
+		// GraphQL returns partial data when only the organization query fails
+		// (e.g. owner is a user, not an org). Only throw if repository data is missing.
+		if (!json.data?.repository) {
+			console.error(
+				`[fetchRepoPageDataGraphQL] GitHub API error for ${owner}/${repo}:`,
+				errorMessages,
+			);
+			throw new Error(errorMessages);
+		}
 	}
 
 	const r = json.data?.repository;

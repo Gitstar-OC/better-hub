@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useCallback, useTransition, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -206,7 +207,10 @@ export function PRsList({
 	onFetchPRPage?: FetchPRPageFn;
 }) {
 	type TabState = "open" | "merged" | "closed";
-	const [state, setState] = useState<TabState>("open");
+	const searchParams = useSearchParams();
+	const tabParam = searchParams.get("tab");
+	const initialTab: TabState = tabParam === "merged" || tabParam === "closed" ? tabParam : "open";
+	const [state, setState] = useState<TabState>(initialTab);
 	const [search, setSearch] = useState("");
 	const [sort, setSort] = useState<SortType>("updated");
 	const [selectedAuthor, setSelectedAuthor] = useState<string | null>(null);
@@ -318,9 +322,24 @@ export function PRsList({
 
 	const closedPRsLoaded = closedQuery.data !== undefined;
 
+	// Fetch closed PRs on mount if URL has ?tab=merged or ?tab=closed
+	useEffect(() => {
+		if (initialTab !== "open" && !closedQuery.data && !closedQuery.isFetching) {
+			closedQuery.refetch();
+		}
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
 	const handleTabChange = useCallback(
 		(tab: TabState) => {
 			setState(tab);
+			const url = new URL(window.location.href);
+			if (tab === "open") {
+				url.searchParams.delete("tab");
+			} else {
+				url.searchParams.set("tab", tab);
+			}
+			window.history.replaceState(null, "", url.toString());
 			if (tab !== "open" && !closedQuery.data && !closedQuery.isFetching) {
 				closedQuery.refetch();
 			}
