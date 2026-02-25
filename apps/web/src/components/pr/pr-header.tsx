@@ -150,7 +150,12 @@ export function PRHeader({
 				{/* Branch */}
 				<span className="flex items-center gap-1 font-mono text-muted-foreground/60 text-[10px]">
 					<GitBranch className="w-3 h-3" />
-					<span>{headBranch}</span>
+					<Link
+						href={`/${owner}/${repo}/tree/${headBranch}`}
+						className="hover:text-info transition-colors hover:underline"
+					>
+						{headBranch}
+					</Link>
 					<ArrowRight className="w-2.5 h-2.5 text-muted-foreground/40" />
 					<EditableBaseBranch
 						owner={owner}
