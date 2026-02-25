@@ -51,14 +51,14 @@ export function IssueDetailLayout({
 					<div
 						className={cn(
 							"pointer-events-none absolute top-0 left-0 right-4 h-6 bg-gradient-to-b from-background to-transparent z-10 transition-opacity duration-200",
-							canScrollUp ? "opacity-100" : "opacity-0"
+							canScrollUp ? "opacity-100" : "opacity-0",
 						)}
 					/>
 					{/* Bottom shadow */}
 					<div
 						className={cn(
 							"pointer-events-none absolute bottom-0 left-0 right-4 h-6 bg-gradient-to-t from-background to-transparent z-10 transition-opacity duration-200",
-							canScrollDown ? "opacity-100" : "opacity-0"
+							canScrollDown ? "opacity-100" : "opacity-0",
 						)}
 					/>
 					<div
