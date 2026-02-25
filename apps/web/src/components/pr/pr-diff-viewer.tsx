@@ -217,6 +217,8 @@ export function PRDiffViewer({
 		return () => window.removeEventListener("ghost:navigate-to-file", handler);
 	}, [files]);
 
+	const handleScrollComplete = useCallback(() => setScrollToLine(null), []);
+
 	const goToPrev = useCallback(() => setActiveIndex((i) => Math.max(0, i - 1)), []);
 	const goToNext = useCallback(
 		() => setActiveIndex((i) => Math.min(files.length - 1, i + 1)),
@@ -561,7 +563,7 @@ export function PRDiffViewer({
 						headBranch={headBranch}
 						baseSha={baseSha}
 						scrollToLine={scrollToLine}
-						onScrollComplete={() => setScrollToLine(null)}
+						onScrollComplete={handleScrollComplete}
 						canWrite={canWrite}
 						fileHighlightData={
 							highlightData[currentFile.filename]
@@ -633,6 +635,8 @@ function SingleFileDiff({
 	const { emit } = useMutationEvents();
 	const lines = file.patch ? parseDiffPatch(file.patch) : [];
 	const diffContainerRef = useRef<HTMLDivElement>(null);
+	const onScrollCompleteRef = useRef(onScrollComplete);
+	onScrollCompleteRef.current = onScrollComplete;
 
 	useEffect(() => {
 		if (scrollToLine == null || !diffContainerRef.current) return;
@@ -646,8 +650,8 @@ function SingleFileDiff({
 				setTimeout(() => row.classList.remove("!bg-warning/10"), 2000);
 			});
 		}
-		onScrollComplete?.();
-	}, [scrollToLine, onScrollComplete]);
+		onScrollCompleteRef.current?.();
+	}, [scrollToLine]);
 	const [commentRange, setCommentRange] = useState<{
 		startLine: number;
 		endLine: number;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, memo } from "react";
+import { useState, useCallback, useEffect, useMemo, memo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ChevronDown, FileCode2 } from "lucide-react";
@@ -104,7 +104,7 @@ const DiffHunkSnippet = memo(function DiffHunkSnippet({
 	diffHunk: string;
 	filename: string;
 }) {
-	const parsed = parseDiffHunkLines(diffHunk);
+	const parsed = useMemo(() => parseDiffHunkLines(diffHunk), [diffHunk]);
 	const [tokensByLine, setTokensByLine] = useState<(SyntaxToken[] | null)[]>(
 		() => parsed.map(() => null),
 	);
