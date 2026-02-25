@@ -3,12 +3,7 @@
 import { useState, useEffect } from "react";
 import { Pin } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-	isPinnedRepo,
-	pinRepo,
-	unpinRepo,
-	type PinnedRepo,
-} from "@/lib/pinned-repos";
+import { isPinnedRepo, pinRepo, unpinRepo, type PinnedRepo } from "@/lib/pinned-repos";
 
 interface PinButtonProps {
 	owner: string;

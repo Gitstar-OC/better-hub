@@ -191,7 +191,7 @@ export function RepoSidebar({
 						starCount={stars}
 					/>
 
-				    <PinButton
+					<PinButton
 						owner={owner}
 						repo={repoName}
 						language={language}

@@ -34,12 +34,7 @@ import { toInternalUrl, getLanguageColor } from "@/lib/github-utils";
 import { RecentlyViewed } from "./recently-viewed";
 import { CreateRepoDialog } from "@/components/repo/create-repo-dialog";
 import { markNotificationDone } from "@/app/(app)/repos/actions";
-import {
-	getPinnedRepos,
-	togglePinRepo,
-	unpinRepo,
-	type PinnedRepo,
-} from "@/lib/pinned-repos";
+import { getPinnedRepos, togglePinRepo, unpinRepo, type PinnedRepo } from "@/lib/pinned-repos";
 import type {
 	IssueItem,
 	RepoItem,
@@ -454,27 +449,23 @@ function ReposTabs({
 		}
 	}, []);
 
-
 	const pinnedSet = useMemo(
 		() => new Set(pinnedRepos.map((r) => r.full_name)),
 		[pinnedRepos],
 	);
 
-	const handleTogglePin = useCallback(
-		(repo: RepoItem) => {
-			const updated = togglePinRepo({
-				id: repo.id,
-				full_name: repo.full_name,
-				name: repo.name,
-				owner: repo.owner,
-				language: repo.language,
-				stargazers_count: repo.stargazers_count,
-				private: repo.private,
-			});
-			setPinnedRepos(updated);
-		},
-		[],
-	);
+	const handleTogglePin = useCallback((repo: RepoItem) => {
+		const updated = togglePinRepo({
+			id: repo.id,
+			full_name: repo.full_name,
+			name: repo.name,
+			owner: repo.owner,
+			language: repo.language,
+			stargazers_count: repo.stargazers_count,
+			private: repo.private,
+		});
+		setPinnedRepos(updated);
+	}, []);
 
 	const handleUnpin = useCallback((fullName: string) => {
 		const updated = unpinRepo(fullName);
@@ -548,14 +539,18 @@ function ReposTabs({
 						/>
 					))}
 				{tab === "repos" &&
-					repos.slice(0, 10).map((repo) => (
-						<RepoRow
-							key={repo.id}
-							repo={repo}
-							isPinned={pinnedSet.has(repo.full_name)}
-							onTogglePin={handleTogglePin}
-						/>
-					))}
+					repos
+						.slice(0, 10)
+						.map((repo) => (
+							<RepoRow
+								key={repo.id}
+								repo={repo}
+								isPinned={pinnedSet.has(
+									repo.full_name,
+								)}
+								onTogglePin={handleTogglePin}
+							/>
+						))}
 				{tab === "trending" &&
 					trending.map((repo) => (
 						<TrendingRow key={repo.id} repo={repo} />
@@ -759,9 +754,10 @@ function RepoRow({
 							<span
 								className="w-1.5 h-1.5 rounded-full shrink-0"
 								style={{
-									backgroundColor: getLanguageColor(
-										repo.language,
-									),
+									backgroundColor:
+										getLanguageColor(
+											repo.language,
+										),
 								}}
 							/>
 							{repo.language}
@@ -838,9 +834,10 @@ function PinnedRepoRow({
 							<span
 								className="w-1.5 h-1.5 rounded-full shrink-0"
 								style={{
-									backgroundColor: getLanguageColor(
-										repo.language,
-									),
+									backgroundColor:
+										getLanguageColor(
+											repo.language,
+										),
 								}}
 							/>
 							{repo.language}
