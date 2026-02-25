@@ -50,6 +50,7 @@ export default async function HomePage({
 			</div>
 
 			<style>{`
+				html, body { background: #030304; }
 				@keyframes heroFadeUp {
 					from { opacity: 0; transform: translateY(12px); filter: blur(4px); }
 					to { opacity: 1; transform: translateY(0); filter: blur(0px); }
@@ -133,9 +134,8 @@ export default async function HomePage({
 						className="hero-in text-[11px] text-foreground/40 mt-3"
 						style={{ animationDelay: "1.2s" }}
 					>
-						Only the permissions you select above will be
-						requested. Your access token is encrypted and stored
-						securely.
+						Your access token is encrypted and stored securely.
+						Only the permissions you grant will be used.
 					</p>
 				</div>
 			</div>
