@@ -10,7 +10,6 @@ import { cache } from "react";
 import { dash } from "@better-auth/infra";
 import { createHash } from "@better-auth/utils/hash";
 import { admin, oAuthProxy } from "better-auth/plugins";
-import { admin } from "better-auth/plugins";
 import { patSignIn } from "./auth-plugins/pat-signin";
 
 async function getOctokitUser(token: string) {
@@ -85,7 +84,8 @@ export const auth = betterAuth({
 	trustedOrigins: [
 		// Production
 		"https://www.better-hub.com",
-		// TODO: vercel preview domain scope
+		// Vercel preview
+		"https://better-hub-*-better-auth.vercel.app",
 	],
 });
 
