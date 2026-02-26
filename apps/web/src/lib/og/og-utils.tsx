@@ -39,7 +39,7 @@ let _geistMono: ArrayBuffer | null = null;
 async function loadFont(name: string): Promise<ArrayBuffer> {
 	const path = join(process.cwd(), "public", "fonts", name);
 	const buf = await readFile(path);
-	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
 }
 
 export async function getGeistSans(): Promise<ArrayBuffer> {
