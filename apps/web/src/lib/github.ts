@@ -3686,9 +3686,8 @@ export async function getRepoPullRequestsWithStats(
 		if (wantCounts) {
 			getGitHubAuthContext().then(async (authCtx) => {
 				if (!authCtx) return;
-				const { updateCachedRepoPageDataNavCounts } = await import(
-					"@/lib/repo-data-cache"
-				);
+				const { updateCachedRepoPageDataNavCounts } =
+					await import("@/lib/repo-data-cache");
 				updateCachedRepoPageDataNavCounts(authCtx.userId, owner, repo, {
 					openPrs: counts.open,
 				}).catch(() => {});
