@@ -9,6 +9,7 @@ import {
 	getUserOrgTopRepos,
 	getContributionData,
 } from "@/lib/github";
+import { buildOgImageUrl } from "@/lib/og-image";
 import { OrgDetailContent } from "@/components/orgs/org-detail-content";
 import { UserProfileContent } from "@/components/users/user-profile-content";
 
@@ -18,9 +19,26 @@ export async function generateMetadata({
 	params: Promise<{ owner: string }>;
 }): Promise<Metadata> {
 	const { owner } = await params;
+	const imageUrl = buildOgImageUrl("profile", { username: owner });
 	const orgData = await getOrg(owner).catch(() => null);
 	if (orgData) {
-		return { title: orgData.name || orgData.login };
+		return {
+			title: orgData.name || orgData.login,
+			openGraph: {
+				images: [
+					{
+						url: imageUrl,
+						width: 1200,
+						height: 630,
+						alt: `${orgData.login} profile preview`,
+					},
+				],
+			},
+			twitter: {
+				card: "summary_large_image",
+				images: [imageUrl],
+			},
+		};
 	}
 	const userData = await getUser(owner).catch(() => null);
 	if (userData) {
@@ -28,9 +46,39 @@ export async function generateMetadata({
 			title: userData.name
 				? `${userData.name} (${userData.login})`
 				: userData.login,
+			openGraph: {
+				images: [
+					{
+						url: imageUrl,
+						width: 1200,
+						height: 630,
+						alt: `${userData.login} profile preview`,
+					},
+				],
+			},
+			twitter: {
+				card: "summary_large_image",
+				images: [imageUrl],
+			},
 		};
 	}
-	return { title: owner };
+	return {
+		title: owner,
+		openGraph: {
+			images: [
+				{
+					url: imageUrl,
+					width: 1200,
+					height: 630,
+					alt: `${owner} profile preview`,
+				},
+			],
+		},
+		twitter: {
+			card: "summary_large_image",
+			images: [imageUrl],
+		},
+	};
 }
 
 export default async function OwnerPage({ params }: { params: Promise<{ owner: string }> }) {

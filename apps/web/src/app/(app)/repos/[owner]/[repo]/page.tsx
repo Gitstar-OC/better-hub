@@ -9,6 +9,7 @@ import {
 	getCachedOverviewCommitActivity,
 	getCachedOverviewCI,
 } from "@/lib/repo-data-cache";
+import { buildOgImageUrl } from "@/lib/og-image";
 import { fetchPinnedItemsForRepo } from "./pin-actions";
 import { revalidateReadme } from "./readme-actions";
 
@@ -18,7 +19,25 @@ export async function generateMetadata({
 	params: Promise<{ owner: string; repo: string }>;
 }): Promise<Metadata> {
 	const { owner, repo } = await params;
-	return { title: `${owner}/${repo}` };
+	const imageUrl = buildOgImageUrl("repo", { owner, repo });
+
+	return {
+		title: `${owner}/${repo}`,
+		openGraph: {
+			images: [
+				{
+					url: imageUrl,
+					width: 1200,
+					height: 630,
+					alt: `${owner}/${repo} repository preview`,
+				},
+			],
+		},
+		twitter: {
+			card: "summary_large_image",
+			images: [imageUrl],
+		},
+	};
 }
 
 export default async function RepoPage({

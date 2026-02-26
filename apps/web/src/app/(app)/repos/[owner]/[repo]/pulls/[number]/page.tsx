@@ -38,6 +38,7 @@ import { headers } from "next/headers";
 import { inngest } from "@/lib/inngest";
 import { isItemPinned } from "@/lib/pinned-items-store";
 import { all } from "better-all";
+import { buildOgImageUrl } from "@/lib/og-image";
 
 export async function generateMetadata({
 	params,
@@ -46,14 +47,45 @@ export async function generateMetadata({
 }): Promise<Metadata> {
 	const { owner, repo, number: numStr } = await params;
 	const pullNumber = parseInt(numStr, 10);
+	const imageUrl = buildOgImageUrl("pr", { owner, repo, number: pullNumber });
 	const bundle = await getPullRequestBundle(owner, repo, pullNumber);
 
 	if (!bundle) {
-		return { title: `PR #${pullNumber} · ${owner}/${repo}` };
+		return {
+			title: `PR #${pullNumber} · ${owner}/${repo}`,
+			openGraph: {
+				images: [
+					{
+						url: imageUrl,
+						width: 1200,
+						height: 630,
+						alt: `Pull request #${pullNumber} preview`,
+					},
+				],
+			},
+			twitter: {
+				card: "summary_large_image",
+				images: [imageUrl],
+			},
+		};
 	}
 
 	return {
 		title: `${bundle.pr.title} · PR #${pullNumber} · ${owner}/${repo}`,
+		openGraph: {
+			images: [
+				{
+					url: imageUrl,
+					width: 1200,
+					height: 630,
+					alt: `Pull request #${pullNumber} preview`,
+				},
+			],
+		},
+		twitter: {
+			card: "summary_large_image",
+			images: [imageUrl],
+		},
 	};
 }
 

@@ -21,6 +21,7 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import { inngest } from "@/lib/inngest";
 import { isItemPinned } from "@/lib/pinned-items-store";
+import { buildOgImageUrl } from "@/lib/og-image";
 
 export async function generateMetadata({
 	params,
@@ -29,14 +30,45 @@ export async function generateMetadata({
 }): Promise<Metadata> {
 	const { owner, repo, number: numStr } = await params;
 	const issueNumber = parseInt(numStr, 10);
+	const imageUrl = buildOgImageUrl("issue", { owner, repo, number: issueNumber });
 	const issue = await getIssue(owner, repo, issueNumber);
 
 	if (!issue) {
-		return { title: `Issue #${issueNumber} · ${owner}/${repo}` };
+		return {
+			title: `Issue #${issueNumber} · ${owner}/${repo}`,
+			openGraph: {
+				images: [
+					{
+						url: imageUrl,
+						width: 1200,
+						height: 630,
+						alt: `Issue #${issueNumber} preview`,
+					},
+				],
+			},
+			twitter: {
+				card: "summary_large_image",
+				images: [imageUrl],
+			},
+		};
 	}
 
 	return {
 		title: `${issue.title} · Issue #${issueNumber} · ${owner}/${repo}`,
+		openGraph: {
+			images: [
+				{
+					url: imageUrl,
+					width: 1200,
+					height: 630,
+					alt: `Issue #${issueNumber} preview`,
+				},
+			],
+		},
+		twitter: {
+			card: "summary_large_image",
+			images: [imageUrl],
+		},
 	};
 }
 

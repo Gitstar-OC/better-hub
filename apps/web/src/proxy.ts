@@ -23,6 +23,24 @@ const APP_ROUTES = new Set([
 export default async function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 	const segments = pathname.split("/").filter(Boolean);
+	const service = request.nextUrl.searchParams.get("service");
+	const userAgent = request.headers.get("user-agent")?.toLowerCase() ?? "";
+
+	const isGitSmartHttpRequest =
+		service === "git-upload-pack" ||
+		service === "git-receive-pack" ||
+		pathname.endsWith("/info/refs") ||
+		pathname.endsWith("/git-upload-pack") ||
+		pathname.endsWith("/git-receive-pack") ||
+		userAgent.startsWith("git/");
+
+	const isPotentialRepoPath = segments.length >= 2 && !APP_ROUTES.has(segments[0]);
+
+	if (isGitSmartHttpRequest && isPotentialRepoPath) {
+		const githubUrl = new URL(`https://github.com${pathname}`);
+		githubUrl.search = request.nextUrl.search;
+		return NextResponse.redirect(githubUrl, 307);
+	}
 
 	// Handle authentication first
 	const isPublic = publicPaths.some(

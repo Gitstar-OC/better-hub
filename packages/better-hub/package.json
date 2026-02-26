@@ -1,0 +1,22 @@
+{
+	"name": "better-hub",
+	"version": "0.1.0",
+	"description": "CLI utilities for Better Hub",
+	"keywords": [
+		"better-hub",
+		"git",
+		"github"
+	],
+	"license": "MIT",
+	"bin": {
+		"better-hub": "./bin/better-hub.js"
+	},
+	"files": [
+		"bin",
+		"README.md"
+	],
+	"type": "module",
+	"engines": {
+		"node": ">=18"
+	}
+}

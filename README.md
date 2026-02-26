@@ -24,6 +24,16 @@ At Better Auth, we spend a lot of our time on GitHub. So we decided to build the
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, PR workflow, and code style guidelines.
 
+## Clone URL setup
+
+If you want `git clone https://better-hub.com/owner/repo` to transparently resolve to GitHub, run:
+
+```bash
+npx better-hub init
+```
+
+This configures Git URL rewrite rules via `insteadOf`, so vanity Better Hub clone URLs keep working even if your site host is only a web wrapper.
+
 ## License
 
 [MIT](LICENSE)

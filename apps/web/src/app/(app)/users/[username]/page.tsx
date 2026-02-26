@@ -6,6 +6,7 @@ import {
 	getUserOrgTopRepos,
 	getContributionData,
 } from "@/lib/github";
+import { buildOgImageUrl } from "@/lib/og-image";
 import { UserProfileContent } from "@/components/users/user-profile-content";
 import { ExternalLink, User } from "lucide-react";
 
@@ -43,11 +44,44 @@ export async function generateMetadata({
 	params: Promise<{ username: string }>;
 }): Promise<Metadata> {
 	const { username } = await params;
+	const imageUrl = buildOgImageUrl("profile", { username });
 	const userData = await getUser(username).catch(() => null);
 	if (!userData) {
-		return { title: username };
+		return {
+			title: username,
+			openGraph: {
+				images: [
+					{
+						url: imageUrl,
+						width: 1200,
+						height: 630,
+						alt: `${username} profile preview`,
+					},
+				],
+			},
+			twitter: {
+				card: "summary_large_image",
+				images: [imageUrl],
+			},
+		};
 	}
-	return { title: userData.name ? `${userData.name} (${userData.login})` : userData.login };
+	return {
+		title: userData.name ? `${userData.name} (${userData.login})` : userData.login,
+		openGraph: {
+			images: [
+				{
+					url: imageUrl,
+					width: 1200,
+					height: 630,
+					alt: `${userData.login} profile preview`,
+				},
+			],
+		},
+		twitter: {
+			card: "summary_large_image",
+			images: [imageUrl],
+		},
+	};
 }
 
 export default async function UserProfilePage({
