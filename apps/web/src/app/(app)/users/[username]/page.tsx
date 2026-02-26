@@ -26,6 +26,7 @@ function UnknownUserPage({ username }: { username: string }) {
 			</div>
 			<a
 				href={githubUrl}
+				data-no-github-intercept
 				target="_blank"
 				rel="noopener noreferrer"
 				className="flex items-center gap-1.5 text-[11px] font-mono px-3 py-1.5 border border-border text-muted-foreground hover:text-foreground hover:border-border transition-colors"
@@ -47,7 +48,12 @@ export async function generateMetadata({
 	if (!userData) {
 		return { title: username };
 	}
-	return { title: userData.name ? `${userData.name} (${userData.login})` : userData.login };
+	const displayName = userData.name ? `${userData.name} (${userData.login})` : userData.login;
+	return {
+		title: displayName,
+		description: userData.bio || `${displayName} on Better Hub`,
+		openGraph: { title: displayName },
+	};
 }
 
 export default async function UserProfilePage({
