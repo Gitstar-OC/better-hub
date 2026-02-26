@@ -1488,18 +1488,6 @@ export function CommandMenu() {
 
 	return (
 		<>
-			{/* Navbar trigger — mobile: search icon, desktop: ⌘K badge */}
-			<button
-				data-onboarding="cmdk"
-				onClick={() => setOpen(true)}
-				className="inline-flex items-center justify-center text-sm text-muted-foreground hover:text-foreground transition-colors rounded-md md:bg-muted/30 md:hover:bg-muted/50"
-			>
-				<Search className="w-4 h-4 md:hidden" />
-				<kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 md:flex">
-					<span className="text-xs">&#x2318;</span>K
-				</kbd>
-			</button>
-
 			{createPortal(
 				<>
 					{/* Backdrop */}

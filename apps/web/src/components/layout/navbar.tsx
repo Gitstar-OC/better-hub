@@ -124,9 +124,8 @@ export function AppNavbar({ session, notifications }: AppNavbarProps) {
 						</span>
 					</Link>
 				</div>
+				<CommandMenu />
 				<div className="flex items-center gap-1.5">
-					<CommandMenu />
-
 					{/* Ghost AI button */}
 					<NavbarGhostButton />
 
@@ -277,6 +276,26 @@ export function AppNavbar({ session, notifications }: AppNavbarProps) {
 										<DropdownMenuShortcut className="flex items-center gap-0.5 text-[10px] font-mono">
 											<Command className="w-2 h-2" />
 											/
+										</DropdownMenuShortcut>
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										onClick={() =>
+											window.dispatchEvent(
+												new CustomEvent(
+													"open-cmdk-mode",
+													{
+														detail: "commands",
+													},
+												),
+											)
+										}
+										className="text-[11px] gap-2 h-7"
+									>
+										<Command className="w-3.5 h-3.5" />
+										Command menu
+										<DropdownMenuShortcut className="flex items-center gap-0.5 text-[10px] font-mono">
+											<Command className="w-2 h-2" />
+											K
 										</DropdownMenuShortcut>
 									</DropdownMenuItem>
 								</DropdownMenuGroup>
