@@ -46,25 +46,22 @@ export function PRStatusIndicator({
 		else setStatus("open");
 	}, [initialMerged, initialState, initialDraft]);
 
-	useMutationSubscription(
-		["pr:merged", "pr:closed", "pr:reopened"],
-		(event) => {
-			const prEvent = event as PRStateEvent;
-			if (!isRepoEvent(prEvent, owner, repo)) return;
-			if (prEvent.number !== number) return;
-			switch (prEvent.type) {
-				case "pr:merged":
-					setStatus("merged");
-					break;
-				case "pr:closed":
-					setStatus("closed");
-					break;
-				case "pr:reopened":
-					setStatus("open");
-					break;
-			}
-		},
-	);
+	useMutationSubscription(["pr:merged", "pr:closed", "pr:reopened"], (event) => {
+		const prEvent = event as PRStateEvent;
+		if (!isRepoEvent(prEvent, owner, repo)) return;
+		if (prEvent.number !== number) return;
+		switch (prEvent.type) {
+			case "pr:merged":
+				setStatus("merged");
+				break;
+			case "pr:closed":
+				setStatus("closed");
+				break;
+			case "pr:reopened":
+				setStatus("open");
+				break;
+		}
+	});
 
 	const config = {
 		merged: {
