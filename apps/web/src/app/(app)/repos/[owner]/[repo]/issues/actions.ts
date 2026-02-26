@@ -240,7 +240,7 @@ interface UploadImageResult {
 	error?: string;
 }
 
-export type IssueImageUploadMode = "repo" | "fork" | "needs_fork";
+export type IssueImageUploadMode = "repo" | "fork" | "needs_fork" | "name_taken";
 
 export interface IssueImageUploadContext {
 	success: boolean;
@@ -256,6 +256,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 function isForkOfRepo(
 	forkData: {
 		fork?: boolean;
+		name?: string | null;
 		parent?: { full_name?: string | null } | null;
 		source?: { full_name?: string | null } | null;
 	},
@@ -263,6 +264,75 @@ function isForkOfRepo(
 ) {
 	if (!forkData.fork) return false;
 	return forkData.parent?.full_name === fullName || forkData.source?.full_name === fullName;
+}
+
+async function findUserForkUploadTarget(
+	octokit: Awaited<ReturnType<typeof getOctokit>>,
+	viewerLogin: string,
+	upstreamOwner: string,
+	upstreamRepo: string,
+): Promise<{ uploadRepo?: string }> {
+	if (!octokit) return {};
+
+	const normalizedViewer = viewerLogin.toLowerCase();
+
+	// Prefer an existing same-name repo in the viewer account as the upload target.
+	// This keeps image upload working even when fork naming diverges or the name is already taken.
+	try {
+		const { data: sameNameRepo } = await octokit.repos.get({
+			owner: viewerLogin,
+			repo: upstreamRepo,
+		});
+
+		if (sameNameRepo?.name) {
+			return { uploadRepo: sameNameRepo.name };
+		}
+	} catch {
+		// Same-name repo not found or inaccessible; continue with fork discovery.
+	}
+
+	// Primary fork detection path: ask GitHub for forks of the upstream repo,
+	// then pick the one owned by the current viewer regardless of fork repo name.
+	try {
+		const forks = await octokit.paginate(octokit.repos.listForks, {
+			owner: upstreamOwner,
+			repo: upstreamRepo,
+			per_page: 100,
+		});
+
+		const userFork = forks.find(
+			(forkRepo) => forkRepo.owner?.login?.toLowerCase() === normalizedViewer,
+		);
+
+		if (userFork?.name) {
+			return { uploadRepo: userFork.name };
+		}
+	} catch {
+		// If upstream fork listing fails, continue with local fallbacks.
+	}
+
+	const upstreamFullName = `${upstreamOwner}/${upstreamRepo}`;
+
+	// Fallback path for environments where upstream fork listing is limited:
+	// inspect viewer-owned repos and match by fork parent/source linkage.
+	try {
+		const ownedRepos = await octokit.paginate(octokit.repos.listForAuthenticatedUser, {
+			affiliation: "owner",
+			visibility: "all",
+			per_page: 100,
+		});
+
+		for (const repoData of ownedRepos) {
+			if (!repoData?.fork) continue;
+			if (isForkOfRepo(repoData, upstreamFullName)) {
+				return { uploadRepo: repoData.name ?? upstreamRepo };
+			}
+		}
+	} catch {
+		// Ignore search failures and fall back to current state.
+	}
+
+	return {};
 }
 
 export async function getIssueImageUploadContext(
@@ -294,25 +364,20 @@ export async function getIssueImageUploadContext(
 			};
 		}
 
-		const upstreamFullName = `${owner}/${repo}`;
-		try {
-			// For non-writers, try using their own fork as the upload target.
-			const { data: forkRepoData } = await octokit.repos.get({
-				owner: viewer.login,
-				repo,
-			});
-
-			if (isForkOfRepo(forkRepoData, upstreamFullName)) {
-				return {
-					success: true,
-					mode: "fork",
-					viewerLogin: viewer.login,
-					uploadOwner: viewer.login,
-					uploadRepo: repo,
-				};
-			}
-		} catch {
-			// user fork doesn't exist yet
+		const forkTarget = await findUserForkUploadTarget(
+			octokit,
+			viewer.login,
+			owner,
+			repo,
+		);
+		if (forkTarget.uploadRepo) {
+			return {
+				success: true,
+				mode: "fork",
+				viewerLogin: viewer.login,
+				uploadOwner: viewer.login,
+				uploadRepo: forkTarget.uploadRepo,
+			};
 		}
 
 		return {
@@ -336,27 +401,59 @@ export async function ensureForkForIssueImageUpload(
 	if (!viewer?.login) return { success: false, error: "Not authenticated" };
 
 	try {
-		await octokit.repos.createFork({ owner, repo });
+		// Defensive short-circuit: if viewer can already write upstream, no fork is needed.
+		const { data: repoData } = await octokit.repos.get({ owner, repo });
+		const isOwner = repoData.owner?.login === viewer.login;
+		const canWrite =
+			repoData.permissions?.push ||
+			repoData.permissions?.maintain ||
+			repoData.permissions?.admin;
+		if (isOwner || canWrite) {
+			return {
+				success: true,
+				mode: "repo",
+				viewerLogin: viewer.login,
+				uploadOwner: owner,
+				uploadRepo: repo,
+			};
+		}
 
-		const upstreamFullName = `${owner}/${repo}`;
+		// Reuse an already available upload target (same-name repo or discovered fork)
+		// before attempting a new fork API call.
+		const existingFork = await findUserForkUploadTarget(
+			octokit,
+			viewer.login,
+			owner,
+			repo,
+		);
+		if (existingFork.uploadRepo) {
+			return {
+				success: true,
+				mode: "fork",
+				viewerLogin: viewer.login,
+				uploadOwner: viewer.login,
+				uploadRepo: existingFork.uploadRepo,
+			};
+		}
+
+		await octokit.repos.createFork({ owner, repo });
 		// GitHub fork creation is async; poll until the fork is queryable and linked.
 		for (let attempt = 0; attempt < 12; attempt++) {
-			try {
-				const { data: forkRepoData } = await octokit.repos.get({
-					owner: viewer.login,
-					repo,
-				});
-				if (isForkOfRepo(forkRepoData, upstreamFullName)) {
-					return {
-						success: true,
-						mode: "fork",
-						viewerLogin: viewer.login,
-						uploadOwner: viewer.login,
-						uploadRepo: repo,
-					};
-				}
-			} catch {
-				// fork may still be provisioning
+			// Re-resolve target each attempt so renamed/newly created forks are picked up.
+			const resolvedFork = await findUserForkUploadTarget(
+				octokit,
+				viewer.login,
+				owner,
+				repo,
+			);
+			if (resolvedFork.uploadRepo) {
+				return {
+					success: true,
+					mode: "fork",
+					viewerLogin: viewer.login,
+					uploadOwner: viewer.login,
+					uploadRepo: resolvedFork.uploadRepo,
+				};
 			}
 
 			await sleep(1000);
@@ -366,8 +463,31 @@ export async function ensureForkForIssueImageUpload(
 			success: false,
 			error: "Fork created, but it is still provisioning. Try again in a few seconds.",
 		};
-	} catch (err: unknown) {
-		return { success: false, error: getErrorMessage(err) };
+	} catch (err: any) {
+		const resolvedFork = await findUserForkUploadTarget(
+			octokit,
+			viewer.login,
+			owner,
+			repo,
+		);
+		if (resolvedFork.uploadRepo) {
+			return {
+				success: true,
+				mode: "fork",
+				viewerLogin: viewer.login,
+				uploadOwner: viewer.login,
+				uploadRepo: resolvedFork.uploadRepo,
+			};
+		}
+
+		const message = getErrorMessage(err);
+		if (message.includes("already exists") || err.status === 422) {
+			return {
+				success: false,
+				error: `A repository named "${viewer.login}/${repo}" already exists but is not a fork of this repository. Please rename or delete it to proceed.`,
+			};
+		}
+		return { success: false, error: message };
 	}
 }
 
