@@ -30,7 +30,7 @@ export default async function PullsPage() {
 			assigned={assigned}
 			created={created}
 			mentioned={mentioned}
-			involved={involved}
+			// involved={involved}
 			username={user.login}
 		/>
 	);

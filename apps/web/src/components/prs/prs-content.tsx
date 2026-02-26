@@ -22,7 +22,7 @@ import { toInternalUrl } from "@/lib/github-utils";
 import { CopyLinkButton } from "@/components/shared/copy-link-button";
 import type { IssueItem } from "@/lib/github-types";
 
-type TabType = "review" | "created" | "assigned" | "mentioned" | "involved";
+type TabType = "review" | "created" | "assigned" | "mentioned";
 type SortType = "updated" | "newest" | "oldest";
 
 const sortLabels: Record<SortType, string> = {
@@ -43,14 +43,14 @@ export function PRsContent({
 	reviewRequested,
 	assigned,
 	mentioned,
-	involved,
+	// involved,
 	username,
 }: {
 	created: { items: IssueItem[]; total_count: number };
 	reviewRequested: { items: IssueItem[]; total_count: number };
 	assigned: { items: IssueItem[]; total_count: number };
 	mentioned: { items: IssueItem[]; total_count: number };
-	involved: { items: IssueItem[]; total_count: number };
+	// involved: { items: IssueItem[]; total_count: number };
 	username: string;
 }) {
 	const [tab, setTab] = useState<TabType>("review");
@@ -82,12 +82,12 @@ export function PRsContent({
 			icon: <AtSign className="w-3 h-3" />,
 			count: mentioned.total_count,
 		},
-		{
-			key: "involved",
-			label: "Involved",
-			icon: <Users className="w-3 h-3" />,
-			count: involved.total_count,
-		},
+		// {
+		// 	key: "involved",
+		// 	label: "Involved",
+		// 	icon: <Users className="w-3 h-3" />,
+		// 	count: involved.total_count,
+		// },
 	];
 
 	const rawItems = {
@@ -95,7 +95,7 @@ export function PRsContent({
 		created: created.items,
 		assigned: assigned.items,
 		mentioned: mentioned.items,
-		involved: involved.items,
+		// involved: involved.items,
 	}[tab];
 
 	const filtered = useMemo(() => {
