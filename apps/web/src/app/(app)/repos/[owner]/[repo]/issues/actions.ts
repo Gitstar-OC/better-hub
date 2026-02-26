@@ -1,6 +1,6 @@
 "use server";
 
-import { getOctokit, invalidateRepoIssuesCache } from "@/lib/github";
+import { getAuthenticatedUser, getOctokit, invalidateRepoIssuesCache } from "@/lib/github";
 import { getErrorMessage } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 import { invalidateRepoCache } from "@/lib/repo-data-cache-vc";
@@ -238,6 +238,137 @@ interface UploadImageResult {
 	success: boolean;
 	url?: string;
 	error?: string;
+}
+
+export type IssueImageUploadMode = "repo" | "fork" | "needs_fork";
+
+export interface IssueImageUploadContext {
+	success: boolean;
+	mode?: IssueImageUploadMode;
+	viewerLogin?: string;
+	uploadOwner?: string;
+	uploadRepo?: string;
+	error?: string;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isForkOfRepo(
+	forkData: {
+		fork?: boolean;
+		parent?: { full_name?: string | null } | null;
+		source?: { full_name?: string | null } | null;
+	},
+	fullName: string,
+) {
+	if (!forkData.fork) return false;
+	return forkData.parent?.full_name === fullName || forkData.source?.full_name === fullName;
+}
+
+export async function getIssueImageUploadContext(
+	owner: string,
+	repo: string,
+): Promise<IssueImageUploadContext> {
+	const octokit = await getOctokit();
+	if (!octokit) return { success: false, error: "Not authenticated" };
+
+	const viewer = await getAuthenticatedUser();
+	if (!viewer?.login) return { success: false, error: "Not authenticated" };
+
+	try {
+		const { data: repoData } = await octokit.repos.get({ owner, repo });
+		const isOwner = repoData.owner?.login === viewer.login;
+		const canWrite =
+			repoData.permissions?.push ||
+			repoData.permissions?.maintain ||
+			repoData.permissions?.admin;
+
+		// Prefer direct upstream uploads for owners and users with write-level permissions.
+		if (isOwner || canWrite) {
+			return {
+				success: true,
+				mode: "repo",
+				viewerLogin: viewer.login,
+				uploadOwner: owner,
+				uploadRepo: repo,
+			};
+		}
+
+		const upstreamFullName = `${owner}/${repo}`;
+		try {
+			// For non-writers, try using their own fork as the upload target.
+			const { data: forkRepoData } = await octokit.repos.get({
+				owner: viewer.login,
+				repo,
+			});
+
+			if (isForkOfRepo(forkRepoData, upstreamFullName)) {
+				return {
+					success: true,
+					mode: "fork",
+					viewerLogin: viewer.login,
+					uploadOwner: viewer.login,
+					uploadRepo: repo,
+				};
+			}
+		} catch {
+			// user fork doesn't exist yet
+		}
+
+		return {
+			success: true,
+			mode: "needs_fork",
+			viewerLogin: viewer.login,
+		};
+	} catch (err: unknown) {
+		return { success: false, error: getErrorMessage(err) };
+	}
+}
+
+export async function ensureForkForIssueImageUpload(
+	owner: string,
+	repo: string,
+): Promise<IssueImageUploadContext> {
+	const octokit = await getOctokit();
+	if (!octokit) return { success: false, error: "Not authenticated" };
+
+	const viewer = await getAuthenticatedUser();
+	if (!viewer?.login) return { success: false, error: "Not authenticated" };
+
+	try {
+		await octokit.repos.createFork({ owner, repo });
+
+		const upstreamFullName = `${owner}/${repo}`;
+		// GitHub fork creation is async; poll until the fork is queryable and linked.
+		for (let attempt = 0; attempt < 12; attempt++) {
+			try {
+				const { data: forkRepoData } = await octokit.repos.get({
+					owner: viewer.login,
+					repo,
+				});
+				if (isForkOfRepo(forkRepoData, upstreamFullName)) {
+					return {
+						success: true,
+						mode: "fork",
+						viewerLogin: viewer.login,
+						uploadOwner: viewer.login,
+						uploadRepo: repo,
+					};
+				}
+			} catch {
+				// fork may still be provisioning
+			}
+
+			await sleep(1000);
+		}
+
+		return {
+			success: false,
+			error: "Fork created, but it is still provisioning. Try again in a few seconds.",
+		};
+	} catch (err: unknown) {
+		return { success: false, error: getErrorMessage(err) };
+	}
 }
 
 /**
