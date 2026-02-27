@@ -59,9 +59,7 @@ export async function getIssueTemplates(owner: string, repo: string): Promise<Is
 					f.name.endsWith(".yaml")),
 		);
 
-		const templates: IssueTemplate[] = [];
-
-		for (const file of mdFiles) {
+		const templatePromises = mdFiles.map(async (file) => {
 			try {
 				const { data } = await octokit.repos.getContent({
 					owner,
@@ -74,18 +72,16 @@ export async function getIssueTemplates(owner: string, repo: string): Promise<Is
 						data.content,
 						"base64",
 					).toString("utf-8");
-					const template = parseTemplateFrontmatter(
-						decoded,
-						file.name,
-					);
-					if (template) templates.push(template);
+					return parseTemplateFrontmatter(decoded, file.name);
 				}
 			} catch {
 				// skip unreadable files
 			}
-		}
+			return null;
+		});
 
-		return templates;
+		const templatesResults = await Promise.all(templatePromises);
+		return templatesResults.filter((t): t is IssueTemplate => t !== null);
 	} catch {
 		return [];
 	}
@@ -276,8 +272,7 @@ async function findUserForkUploadTarget(
 
 	const normalizedViewer = viewerLogin.toLowerCase();
 
-	// Prefer an existing same-name repo in the viewer account as the upload target.
-	// This keeps image upload working even when fork naming diverges or the name is already taken.
+	// Prefer an existing same-name repo in the viewer account.
 	try {
 		const { data: sameNameRepo } = await octokit.repos.get({
 			owner: viewerLogin,
@@ -288,11 +283,10 @@ async function findUserForkUploadTarget(
 			return { uploadRepo: sameNameRepo.name };
 		}
 	} catch {
-		// Same-name repo not found or inaccessible; continue with fork discovery.
+		// Continue with fork discovery.
 	}
 
-	// Primary fork detection path: ask GitHub for forks of the upstream repo,
-	// then pick the one owned by the current viewer regardless of fork repo name.
+	// Main fork detection path: find any upstream fork owned by the viewer.
 	try {
 		const forks = await octokit.paginate(octokit.repos.listForks, {
 			owner: upstreamOwner,
@@ -308,13 +302,12 @@ async function findUserForkUploadTarget(
 			return { uploadRepo: userFork.name };
 		}
 	} catch {
-		// If upstream fork listing fails, continue with local fallbacks.
+		// Continue with local fallback.
 	}
 
 	const upstreamFullName = `${upstreamOwner}/${upstreamRepo}`;
 
-	// Fallback path for environments where upstream fork listing is limited:
-	// inspect viewer-owned repos and match by fork parent/source linkage.
+	// Fallback: inspect viewer-owned repos and match by parent/source linkage.
 	try {
 		const ownedRepos = await octokit.paginate(octokit.repos.listForAuthenticatedUser, {
 			affiliation: "owner",
@@ -329,7 +322,7 @@ async function findUserForkUploadTarget(
 			}
 		}
 	} catch {
-		// Ignore search failures and fall back to current state.
+		// Ignore and fall back to current state.
 	}
 
 	return {};
@@ -342,11 +335,14 @@ export async function getIssueImageUploadContext(
 	const octokit = await getOctokit();
 	if (!octokit) return { success: false, error: "Not authenticated" };
 
-	const viewer = await getAuthenticatedUser();
-	if (!viewer?.login) return { success: false, error: "Not authenticated" };
-
 	try {
-		const { data: repoData } = await octokit.repos.get({ owner, repo });
+		const [viewer, { data: repoData }] = await Promise.all([
+			getAuthenticatedUser(),
+			octokit.repos.get({ owner, repo }),
+		]);
+
+		if (!viewer?.login) return { success: false, error: "Not authenticated" };
+
 		const isOwner = repoData.owner?.login === viewer.login;
 		const canWrite =
 			repoData.permissions?.push ||

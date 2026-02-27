@@ -116,12 +116,11 @@ export function CreateIssueDialog({ owner, repo }: { owner: string; repo: string
 		setUploadRepo(cachedUploadContext?.uploadRepo ?? repo);
 		setViewerLogin(cachedUploadContext?.viewerLogin ?? null);
 
-		// On first load (no cache), hold the dialog body until templates/context arrive
-		// so users don't see the form flash before template selection is known.
+		// Hold body on first load to avoid form flash before template decision.
 		const hasCachedData = Boolean(cached);
 		setIsDialogInitializing(!hasCachedData);
 
-		// If we have cached templates, go straight to picker
+		// Cached templates can open directly to the picker.
 		if (cached && cached.templates.length > 0) {
 			setTemplates(cached.templates);
 			setRepoLabels(cached.labels);
@@ -133,28 +132,54 @@ export function CreateIssueDialog({ owner, repo }: { owner: string; repo: string
 		setOpen(true);
 	}, [cached, cachedUploadContext, owner, repo]);
 
-	// Fetch templates + labels in background
+	// Fetch templates, labels, and upload context in parallel.
 	useEffect(() => {
 		if (!open) return;
 
 		const id = ++openId.current;
+		const templatesPromise = getIssueTemplates(owner, repo);
+		const labelsPromise = getRepoLabels(owner, repo);
 		const uploadContextPromise = cachedUploadContext
 			? Promise.resolve(cachedUploadContext)
 			: getIssueImageUploadContext(owner, repo);
 
-		Promise.all([
-			getIssueTemplates(owner, repo),
-			getRepoLabels(owner, repo),
-			uploadContextPromise,
-		])
-			.then(([t, l, uploadContext]) => {
-				// Stale check — dialog was closed or reopened since
+		templatesPromise
+			.then((t) => {
 				if (id !== openId.current) return;
-
-				cache.set(cacheKey, { templates: t, labels: l });
-				uploadContextCache.set(cacheKey, uploadContext);
+				cache.set(cacheKey, {
+					templates: t,
+					labels: cache.get(cacheKey)?.labels ?? [],
+				});
 				setTemplates(t);
+				if (t.length > 0 && !userTouchedForm.current) {
+					setStep("templates");
+					setIsDialogInitializing(false);
+				}
+			})
+			.catch((err: unknown) => {
+				if (id !== openId.current) return;
+				setError(getErrorMessage(err));
+				setStep("form");
+			});
+
+		labelsPromise
+			.then((l) => {
+				if (id !== openId.current) return;
+				cache.set(cacheKey, {
+					templates: cache.get(cacheKey)?.templates ?? [],
+					labels: l,
+				});
 				setRepoLabels(l);
+			})
+			.catch(() => {
+				if (id !== openId.current) return;
+				setRepoLabels([]);
+			});
+
+		uploadContextPromise
+			.then((uploadContext) => {
+				if (id !== openId.current) return;
+				uploadContextCache.set(cacheKey, uploadContext);
 				if (uploadContext.success) {
 					setUploadMode(uploadContext.mode ?? "repo");
 					setUploadOwner(uploadContext.uploadOwner ?? owner);
@@ -166,21 +191,20 @@ export function CreateIssueDialog({ owner, repo }: { owner: string; repo: string
 				} else if (uploadContext.error) {
 					setError(uploadContext.error);
 				}
-
-				// Resolve initial body view after data arrives: show templates first if available.
-				if (!userTouchedForm.current) {
-					setStep(t.length > 0 ? "templates" : "form");
-				}
 			})
 			.catch((err: unknown) => {
 				if (id !== openId.current) return;
 				setError(getErrorMessage(err));
-				setStep("form");
-			})
-			.finally(() => {
-				if (id !== openId.current) return;
-				setIsDialogInitializing(false);
 			});
+
+		Promise.allSettled([templatesPromise, uploadContextPromise]).finally(() => {
+			if (id !== openId.current) return;
+			setIsDialogInitializing(false);
+			if (!userTouchedForm.current) {
+				const currentTemplates = cache.get(cacheKey)?.templates ?? [];
+				setStep(currentTemplates.length > 0 ? "templates" : "form");
+			}
+		});
 	}, [open, owner, repo, cacheKey, cachedUploadContext]);
 
 	useEffect(() => {
