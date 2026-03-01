@@ -18,7 +18,11 @@ import { rerankResults } from "@/lib/mixedbread";
 import { searchEmbeddings, type ContentType } from "@/lib/embedding-store";
 import { toAppUrl } from "@/lib/github-utils";
 import { getUserSettings } from "@/lib/user-settings-store";
-import { checkAiLimit, incrementAiUsage } from "@/lib/ai-usage";
+import { checkUsageLimit } from "@/lib/billing/usage-limit";
+import { getBillingErrorCode } from "@/lib/billing/config";
+import { logTokenUsage, logFixedCostUsage } from "@/lib/billing/token-usage";
+import { hasModelPricing } from "@/lib/billing/ai-models";
+import { waitUntil } from "@vercel/functions";
 import {
 	invalidateIssueCache,
 	invalidatePullRequestCache,
@@ -2621,7 +2625,12 @@ function getMergeConflictTools(octokit: Octokit, commitAuthor?: CommitAuthor) {
 
 // ─── Sandbox Tools ──────────────────────────────────────────────────────────
 
-function getSandboxTools(octokit: Octokit, githubToken: string, commitAuthor?: CommitAuthor) {
+function getSandboxTools(
+	octokit: Octokit,
+	githubToken: string,
+	userId: string,
+	commitAuthor?: CommitAuthor,
+) {
 	let sandbox: Sandbox | null = null;
 	let repoPath: string | null = null;
 	let repoOwner: string | null = null;
@@ -2655,11 +2664,25 @@ The sandbox has git, node, npm, python, and common dev tools.
 					.describe("Branch to clone (defaults to default branch)"),
 			}),
 			execute: async ({ owner, repo, branch }) => {
+				// Sandbox always costs the app — check spending limit regardless of BYOK
+				const limitResult = await checkUsageLimit(userId);
+				if (!limitResult.allowed) {
+					return {
+						error: "Spending limit reached. Sandbox requires app credits.",
+					};
+				}
+
 				// Validate owner/repo are real GitHub names (alphanumeric, hyphens, dots, underscores)
 				const validName = /^[a-zA-Z0-9._-]+$/;
 				if (!validName.test(owner) || !validName.test(repo)) {
 					return {
 						error: `Invalid owner/repo: "${owner}/${repo}". Provide valid GitHub owner and repository names.`,
+					};
+				}
+
+				if (branch && !validName.test(branch)) {
+					return {
+						error: `Invalid branch name: "${branch}". Branch names may only contain alphanumeric characters, dots, hyphens, and underscores.`,
 					};
 				}
 
@@ -2690,18 +2713,27 @@ The sandbox has git, node, npm, python, and common dev tools.
 				}
 
 				try {
-					// Git config
+					const safeName = (commitAuthor?.name ?? "Ghost").replace(
+						/["`$\\]/g,
+						"",
+					);
+					const safeEmail = (
+						commitAuthor?.email ?? "ghost@better-github.app"
+					).replace(/["`$\\]/g, "");
 					await sandbox.commands.run(
-						`git config --global user.name "${commitAuthor?.name ?? "Ghost"}" && git config --global user.email "${commitAuthor?.email ?? "ghost@better-github.app"}"`,
+						`git config --global user.name "${safeName}" && git config --global user.email "${safeEmail}"`,
 					);
 
 					repoPath = `/home/user/${repo}`;
 					repoOwner = owner;
 					repoName = repo;
 
-					// Clone with token auth – shallow clone to save time/disk
 					await sandbox.commands.run(
-						`git clone --depth 1 ${branch ? `-b ${branch}` : ""} https://x-access-token:${githubToken}@github.com/${owner}/${repo}.git ${repoPath}`,
+						`git config --global credential.helper store && printf 'protocol=https\\nhost=github.com\\nusername=x-access-token\\npassword=%s\\n' '${githubToken.replace(/'/g, "'\\''")}' | git credential approve`,
+					);
+
+					await sandbox.commands.run(
+						`git clone --depth 1 ${branch ? `-b ${branch}` : ""} https://github.com/${owner}/${repo}.git ${repoPath}`,
 						{ timeoutMs: 300_000 },
 					);
 				} catch (e: unknown) {
@@ -2711,6 +2743,16 @@ The sandbox has git, node, npm, python, and common dev tools.
 						error: `Clone error: ${e instanceof Error ? e.message : "unknown"}`,
 					};
 				}
+
+				waitUntil(
+					logFixedCostUsage({ userId, taskType: "sandbox" }).catch(
+						(e) =>
+							console.error(
+								"[billing] logFixedCostUsage failed:",
+								e,
+							),
+					),
+				);
 
 				try {
 					const [branchResult, lsResult] = await Promise.all([
@@ -3044,18 +3086,20 @@ export async function POST(req: Request) {
 	// Extract userId and commit author info
 	const session = await auth.api.getSession({ headers: await headers() });
 	const userId = session?.user?.id;
+	if (!userId) {
+		return new Response("Unauthorized", { status: 401 });
+	}
 
-	// Check AI message limit for free users
-	if (userId) {
-		const { allowed, current, limit } = await checkAiLimit(userId);
-		if (!allowed) {
-			return new Response(
-				JSON.stringify({ error: "MESSAGE_LIMIT_REACHED", current, limit }),
-				{ status: 429, headers: { "Content-Type": "application/json" } },
-			);
-		}
-		// Increment on request start (before streaming) to prevent gaming by canceling
-		await incrementAiUsage(userId);
+	// Check AI usage limit — BYOK ghost chat uses the user's own key (no cost to app)
+	const settings = await getUserSettings(userId);
+	let isCustomApiKey = !!(settings.useOwnApiKey && settings.openrouterApiKey);
+	const limitResult = await checkUsageLimit(userId, isCustomApiKey);
+	if (!limitResult.allowed) {
+		const errorCode = getBillingErrorCode(limitResult);
+		return new Response(JSON.stringify({ error: errorCode, ...limitResult }), {
+			status: 429,
+			headers: { "Content-Type": "application/json" },
+		});
 	}
 
 	let commitAuthor: CommitAuthor | undefined;
@@ -3072,7 +3116,10 @@ export async function POST(req: Request) {
 
 	const generalTools = getGeneralTools(octokit, pageContext, userId ?? undefined);
 	const codeEditTools = getCodeEditTools(octokit, commitAuthor);
-	const sandboxTools = githubToken ? getSandboxTools(octokit, githubToken, commitAuthor) : {};
+	const sandboxTools =
+		githubToken && userId
+			? getSandboxTools(octokit, githubToken, userId, commitAuthor)
+			: {};
 	const sandboxPrompt = githubToken ? SANDBOX_PROMPT : undefined;
 	const searchTools = userId ? getSemanticSearchTool(userId) : {};
 	const memoryTools = userId ? getMemoryTools(userId) : {};
@@ -3309,18 +3356,24 @@ export async function POST(req: Request) {
 	let userModelChoice = "auto";
 	const serverApiKey = process.env.OPEN_ROUTER_API_KEY ?? "";
 	let apiKey = serverApiKey;
-	let usingOwnKey = false;
 
-	if (userId) {
-		const settings = await getUserSettings(userId);
-		if (settings.ghostModel) userModelChoice = settings.ghostModel;
-		if (settings.useOwnApiKey && settings.openrouterApiKey) {
-			apiKey = settings.openrouterApiKey;
-			usingOwnKey = true;
-		}
+	if (settings.ghostModel) userModelChoice = settings.ghostModel;
+	if (settings.useOwnApiKey && settings.openrouterApiKey) {
+		apiKey = settings.openrouterApiKey;
+		isCustomApiKey = true;
 	}
 
 	const modelId = resolveModel(userModelChoice, taskType);
+
+	// Custom models (not in MODEL_PRICING) require the user's own API key.
+	if (!isCustomApiKey && !hasModelPricing(modelId)) {
+		return new Response(
+			JSON.stringify({
+				error: "Custom models require your own OpenRouter API key. Please add your API key in AI settings.",
+			}),
+			{ status: 403, headers: { "Content-Type": "application/json" } },
+		);
+	}
 
 	if (!apiKey) {
 		return new Response(
@@ -3329,16 +3382,12 @@ export async function POST(req: Request) {
 		);
 	}
 
-	try {
-		const checkRes = await fetch("https://openrouter.ai/api/v1/auth/key", {
-			headers: { Authorization: `Bearer ${apiKey}` },
-		});
-		if (!checkRes.ok) {
-			// If user's own key is invalid, fall back to the server key
-			if (usingOwnKey && serverApiKey) {
-				apiKey = serverApiKey;
-				usingOwnKey = false;
-			} else {
+	if (isCustomApiKey) {
+		try {
+			const checkRes = await fetch("https://openrouter.ai/api/v1/auth/key", {
+				headers: { Authorization: `Bearer ${apiKey}` },
+			});
+			if (!checkRes.ok) {
 				return new Response(
 					JSON.stringify({
 						error: "OpenRouter API key is invalid or expired. Please update your API key in settings.",
@@ -3349,9 +3398,9 @@ export async function POST(req: Request) {
 					},
 				);
 			}
+		} catch {
+			// Network error validating key — proceed anyway
 		}
-	} catch {
-		// Network error validating key — proceed anyway
 	}
 
 	// Resolve conversation for persistence (if configured)
@@ -3381,6 +3430,26 @@ export async function POST(req: Request) {
 			stopWhen: stepCountIs(50),
 			onError() {},
 		});
+
+		if (userId) {
+			waitUntil(
+				Promise.resolve(result.usage)
+					.then((usage) =>
+						logTokenUsage({
+							userId,
+							provider: "openrouter",
+							modelId,
+							taskType: "ghost",
+							usage,
+							isCustomApiKey,
+							conversationId: conversationId ?? undefined,
+						}),
+					)
+					.catch((e) =>
+						console.error("[billing] logTokenUsage failed:", e),
+					),
+			);
+		}
 
 		if (conversationId) {
 			const convId = conversationId;

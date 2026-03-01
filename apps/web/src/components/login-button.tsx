@@ -3,9 +3,9 @@
 import { signIn } from "@/lib/auth-client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { cn, safeRedirect } from "@/lib/utils";
 import { SCOPE_GROUPS } from "@/lib/github-scopes";
-import { PlusIcon } from "lucide-react";
+import { PlusIcon, ChevronDown } from "lucide-react";
 
 /* ── Icons ── */
 
@@ -196,6 +196,10 @@ export function LoginButton({ redirectTo }: { redirectTo?: string }) {
 		}
 		return initial;
 	});
+	const [permsExpanded, setPermsExpanded] = useState(false);
+	const requiredCount = SCOPE_GROUPS.filter((group) => group.required).length;
+	const selectedCount = selected.size;
+	const optionalSelectedCount = Math.max(0, selectedCount - requiredCount);
 
 	function toggle(id: string) {
 		const group = SCOPE_GROUPS.find((g) => g.id === id);
@@ -216,7 +220,7 @@ export function LoginButton({ redirectTo }: { redirectTo?: string }) {
 		}
 		signIn.social({
 			provider: "github",
-			callbackURL: redirectTo || "/dashboard",
+			callbackURL: safeRedirect(redirectTo),
 			scopes,
 		});
 	}
@@ -241,7 +245,7 @@ export function LoginButton({ redirectTo }: { redirectTo?: string }) {
 				setLoading(false);
 				return;
 			}
-			router.push(redirectTo || "/dashboard");
+			router.push(safeRedirect(redirectTo));
 		} catch {
 			setPatError("Network error. Please try again.");
 			setLoading(false);
@@ -252,86 +256,11 @@ export function LoginButton({ redirectTo }: { redirectTo?: string }) {
 		<div className="space-y-4">
 			{mode === "oauth" ? (
 				<>
-					{/* Scope picker — compact wrapped pills */}
-					<div>
-						<p className="text-[11px] font-mono uppercase tracking-wider text-foreground/40 mb-1.5">
-							Permissions
-						</p>
-						<p className="text-[11px] text-foreground/30 mb-2.5">
-							Click to toggle optional permissions. Hover
-							the{" "}
-							<InfoIcon className="inline w-3 h-3 -mt-px" />{" "}
-							to learn why each is needed.
-						</p>
-						<div className="flex flex-wrap gap-1.5">
-							{SCOPE_GROUPS.map((group) => {
-								const isOn = selected.has(group.id);
-								return (
-									<span
-										key={group.id}
-										className={cn(
-											"inline-flex items-stretch rounded-full border text-[12px] transition-colors",
-											isOn
-												? "border-foreground/30 bg-foreground/10 text-foreground"
-												: "border-foreground/10 text-foreground/40",
-										)}
-									>
-										<button
-											type="button"
-											onClick={() =>
-												toggle(
-													group.id,
-												)
-											}
-											disabled={
-												group.required
-											}
-											className={cn(
-												"inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 transition-colors",
-												!isOn &&
-													"line-through decoration-foreground/20",
-												group.required
-													? "cursor-default"
-													: "cursor-pointer hover:text-foreground/70",
-											)}
-										>
-											{isOn &&
-												(group.required ? (
-													<LockIcon className="w-2.5 h-2.5 shrink-0" />
-												) : (
-													<CheckIcon className="w-2.5 h-2.5 shrink-0" />
-												))}
-											{
-												group.label
-											}
-										</button>
-										<InfoPopover
-											text={
-												group.reason
-											}
-										>
-											<span
-												className={cn(
-													"inline-flex items-center pr-2 pl-1 border-l transition-colors",
-													isOn
-														? "border-foreground/15 text-foreground/30 hover:text-foreground/60"
-														: "border-foreground/10 text-foreground/20 hover:text-foreground/50",
-												)}
-											>
-												<InfoIcon className="w-3 h-3" />
-											</span>
-										</InfoPopover>
-									</span>
-								);
-							})}
-						</div>
-					</div>
-
 					{/* OAuth sign in button */}
 					<button
 						onClick={handleOAuthSignIn}
 						disabled={loading}
-						className="w-full flex items-center justify-center gap-3 bg-foreground text-background font-medium py-3 px-6 rounded-md text-sm hover:bg-foreground/90 transition-colors cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+						className="w-full flex items-center justify-center gap-3 bg-foreground text-background font-medium py-3 px-6 rounded-[2px] text-sm hover:bg-foreground/90 transition-colors cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
 					>
 						{loading ? (
 							<LoadingSpinner className="w-4 h-4" />
@@ -345,6 +274,124 @@ export function LoginButton({ redirectTo }: { redirectTo?: string }) {
 							<ArrowRightIcon className="w-3.5 h-3.5 ml-auto" />
 						)}
 					</button>
+
+					{/* Permissions — collapsed by default */}
+					<div>
+						<button
+							type="button"
+							onClick={() => setPermsExpanded((v) => !v)}
+							className="w-full flex items-center justify-between text-[11px] text-foreground/40 hover:text-foreground/60 transition-colors cursor-pointer py-1"
+						>
+							<span>
+								{requiredCount} required +{" "}
+								{optionalSelectedCount} optional
+								permissions
+							</span>
+							<ChevronDown
+								className={cn(
+									"w-3.5 h-3.5 transition-transform duration-200",
+									permsExpanded &&
+										"rotate-180",
+								)}
+							/>
+						</button>
+
+						{permsExpanded && (
+							<div className="mt-2 space-y-2.5">
+								<p className="text-[11px] text-foreground/45">
+									Click any permission to
+									include or remove it. Hover
+									the{" "}
+									<InfoIcon className="inline w-3 h-3 -mt-px" />{" "}
+									to learn why each is needed.
+								</p>
+								<div className="flex flex-wrap gap-1.5">
+									{SCOPE_GROUPS.map(
+										(group) => {
+											const isOn =
+												selected.has(
+													group.id,
+												);
+											return (
+												<span
+													key={
+														group.id
+													}
+													className={cn(
+														"inline-flex items-stretch rounded-full border text-[12px] transition-colors",
+														isOn
+															? "border-foreground/30 bg-foreground/10 text-foreground"
+															: "border-foreground/10 text-foreground/40",
+													)}
+												>
+													<button
+														type="button"
+														onClick={() =>
+															toggle(
+																group.id,
+															)
+														}
+														disabled={
+															group.required
+														}
+														className={cn(
+															"inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1 transition-colors",
+															!isOn &&
+																"line-through decoration-foreground/20",
+															group.required
+																? "cursor-default"
+																: "cursor-pointer hover:text-foreground/70",
+														)}
+													>
+														{isOn &&
+															(group.required ? (
+																<LockIcon className="w-2.5 h-2.5 shrink-0" />
+															) : (
+																<CheckIcon className="w-2.5 h-2.5 shrink-0" />
+															))}
+														{
+															group.label
+														}
+													</button>
+													<InfoPopover
+														text={
+															group.reason
+														}
+													>
+														<span
+															className={cn(
+																"inline-flex items-center pr-2 pl-1 border-l transition-colors",
+																isOn
+																	? "border-foreground/15 text-foreground/30 hover:text-foreground/60"
+																	: "border-foreground/10 text-foreground/20 hover:text-foreground/50",
+															)}
+														>
+															<InfoIcon className="w-3 h-3" />
+														</span>
+													</InfoPopover>
+												</span>
+											);
+										},
+									)}
+								</div>
+								<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-foreground/40">
+									<span className="inline-flex items-center gap-1">
+										<LockIcon className="w-2.5 h-2.5" />
+										Required
+									</span>
+									<span className="inline-flex items-center gap-1">
+										<CheckIcon className="w-2.5 h-2.5" />
+										Selected optional
+									</span>
+								</div>
+								<p className="text-[11px] text-foreground/50">
+									Only selected permissions
+									are requested on the next
+									screen.
+								</p>
+							</div>
+						)}
+					</div>
 				</>
 			) : (
 				<>
