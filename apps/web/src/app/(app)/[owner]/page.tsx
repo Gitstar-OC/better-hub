@@ -5,10 +5,12 @@ import {
 	getOrgRepos,
 	getUser,
 	getUserPublicRepos,
+	getUserPinnedRepos,
 	getUserPublicOrgs,
 	getUserOrgTopRepos,
 	getContributionData,
 } from "@/lib/github";
+import { getProfilePinnedRepoFullNames } from "@/lib/pinned-items-store";
 import { ogImageUrl, ogImages } from "@/lib/og/og-utils";
 import { OrgDetailContent } from "@/components/orgs/org-detail-content";
 import { UserProfileContent } from "@/components/users/user-profile-content";
@@ -111,14 +113,24 @@ export default async function OwnerPage({ params }: { params: Promise<{ owner: s
 	const isBot = (userData as { type?: string }).type === "Bot";
 
 	let reposData: Awaited<ReturnType<typeof getUserPublicRepos>> = [];
+	let pinnedReposData: Awaited<ReturnType<typeof getUserPinnedRepos>> = [];
+	let customPinnedRepoFullNames: string[] = [];
 	let orgsData: Awaited<ReturnType<typeof getUserPublicOrgs>> = [];
 	let contributionData: Awaited<ReturnType<typeof getContributionData>> = null;
 	let orgTopRepos: Awaited<ReturnType<typeof getUserOrgTopRepos>> = [];
 
 	if (!isBot) {
 		try {
-			[reposData, orgsData, contributionData] = await Promise.all([
+			[
+				reposData,
+				pinnedReposData,
+				customPinnedRepoFullNames,
+				orgsData,
+				contributionData,
+			] = await Promise.all([
 				getUserPublicRepos(userData.login, 100),
+				getUserPinnedRepos(userData.login, 6),
+				getProfilePinnedRepoFullNames(userData.login),
 				getUserPublicOrgs(userData.login),
 				getContributionData(userData.login),
 			]);
@@ -131,6 +143,13 @@ export default async function OwnerPage({ params }: { params: Promise<{ owner: s
 			// Show profile with whatever we have
 		}
 	}
+
+	const repoMapByFullName = new Map(reposData.map((repo) => [repo.full_name, repo] as const));
+	const customPinnedRepos = customPinnedRepoFullNames
+		.map((fullName) => repoMapByFullName.get(fullName))
+		.filter((repo): repo is (typeof reposData)[number] => Boolean(repo));
+	const effectivePinnedRepos =
+		customPinnedRepos.length > 0 ? customPinnedRepos : pinnedReposData;
 
 	return (
 		<UserProfileContent
@@ -169,6 +188,20 @@ export default async function OwnerPage({ params }: { params: Promise<{ owner: s
 			orgs={orgsData.map((org) => ({
 				login: org.login,
 				avatar_url: org.avatar_url,
+			}))}
+			pinnedRepos={effectivePinnedRepos.map((repo) => ({
+				id: String(repo.id),
+				name: repo.name,
+				full_name: repo.full_name,
+				description: repo.description,
+				private: repo.private,
+				fork: repo.fork,
+				archived: repo.archived ?? false,
+				language: repo.language ?? null,
+				stargazers_count: repo.stargazers_count ?? 0,
+				forks_count: repo.forks_count ?? 0,
+				updated_at: repo.updated_at ?? null,
+				html_url: repo.html_url,
 			}))}
 			contributions={contributionData}
 			orgTopRepos={orgTopRepos.map((r) => ({

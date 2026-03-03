@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseAsString, parseAsStringLiteral, useQueryState } from "nuqs";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
 	ArrowUpDown,
 	Building2,
@@ -17,6 +18,7 @@ import {
 	Lock,
 	MapPin,
 	Search,
+	Settings2,
 	Star,
 	Twitter,
 	Users,
@@ -28,6 +30,10 @@ import { TimeAgo } from "@/components/ui/time-ago";
 import { ContributionChart } from "@/components/dashboard/contribution-chart";
 import { computeUserProfileScore } from "@/lib/user-profile-score";
 import { UserProfileScoreRing } from "@/components/users/user-profile-score-ring";
+import { Button } from "@/components/ui/button";
+import { useSession } from "@/lib/auth-client";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { updatePinnedRepos } from "@/app/(app)/[owner]/pinned-repos-actions";
 
 export interface UserProfile {
 	login: string;
@@ -46,7 +52,7 @@ export interface UserProfile {
 }
 
 export interface UserRepo {
-	id: number;
+	id: number | string;
 	name: string;
 	full_name: string;
 	description: string | null;
@@ -59,6 +65,21 @@ export interface UserRepo {
 	open_issues_count: number;
 	updated_at: string | null;
 	pushed_at: string | null;
+}
+
+export interface UserPinnedRepo {
+	id: string;
+	name: string;
+	full_name: string;
+	description: string | null;
+	private: boolean;
+	fork: boolean;
+	archived: boolean;
+	language: string | null;
+	stargazers_count: number;
+	forks_count: number;
+	updated_at: string | null;
+	html_url: string;
 }
 
 export interface UserOrg {
@@ -108,12 +129,14 @@ export interface OrgTopRepo {
 export function UserProfileContent({
 	user,
 	repos,
+	pinnedRepos = [],
 	orgs,
 	contributions,
 	orgTopRepos = [],
 }: {
 	user: UserProfile;
 	repos: UserRepo[];
+	pinnedRepos?: UserPinnedRepo[];
 	orgs: UserOrg[];
 	contributions: ContributionData | null;
 	orgTopRepos?: OrgTopRepo[];
@@ -129,6 +152,72 @@ export function UserProfileContent({
 	);
 	const [languageFilter, setLanguageFilter] = useState<string | null>(null);
 	const [showMoreLanguages, setShowMoreLanguages] = useState(false);
+	const [showCustomizePinned, setShowCustomizePinned] = useState(false);
+	const [isSavingPins, setIsSavingPins] = useState(false);
+	const [customPinnedFullNames, setCustomPinnedFullNames] = useState<string[]>(
+		pinnedRepos.map((repo) => repo.full_name),
+	);
+	const { data: session } = useSession();
+	const router = useRouter();
+	const isOwner = session?.user?.name?.toLowerCase() === user.login.toLowerCase();
+
+	const displayedPinnedRepos = useMemo(() => {
+		const byFullName = new Map<string, UserPinnedRepo>();
+		for (const repo of pinnedRepos) {
+			byFullName.set(repo.full_name, repo);
+		}
+		for (const repo of repos) {
+			if (!byFullName.has(repo.full_name)) {
+				byFullName.set(repo.full_name, {
+					id: String(repo.id),
+					name: repo.name,
+					full_name: repo.full_name,
+					description: repo.description,
+					private: repo.private,
+					fork: repo.fork,
+					archived: repo.archived,
+					language: repo.language,
+					stargazers_count: repo.stargazers_count,
+					forks_count: repo.forks_count,
+					updated_at: repo.updated_at,
+					html_url: `https://github.com/${repo.full_name}`,
+				});
+			}
+		}
+		return customPinnedFullNames
+			.map((fullName) => byFullName.get(fullName))
+			.filter((repo): repo is UserPinnedRepo => Boolean(repo));
+	}, [customPinnedFullNames, pinnedRepos, repos]);
+
+	const handleTogglePin = async (repoFullName: string) => {
+		const isPinned = customPinnedFullNames.includes(repoFullName);
+		let nextPinned: string[];
+
+		if (isPinned) {
+			nextPinned = customPinnedFullNames.filter((name) => name !== repoFullName);
+		} else {
+			if (customPinnedFullNames.length >= 6) return;
+			nextPinned = [...customPinnedFullNames, repoFullName];
+		}
+
+		setCustomPinnedFullNames(nextPinned);
+		setIsSavingPins(true);
+		try {
+			const result = await updatePinnedRepos(user.login, nextPinned);
+			if (result.error) {
+				console.error(result.error);
+				setCustomPinnedFullNames(pinnedRepos.map((repo) => repo.full_name));
+				return;
+			}
+			router.refresh();
+		} catch (error) {
+			console.error("Failed to update pins:", error);
+			setCustomPinnedFullNames(pinnedRepos.map((repo) => repo.full_name));
+		} finally {
+			setIsSavingPins(false);
+		}
+	};
+
 	const moreLanguagesRef = useRef<HTMLDivElement | null>(null);
 	const moreLanguagesMenuRef = useRef<HTMLDivElement | null>(null);
 	const [moreLanguagesPlacement, setMoreLanguagesPlacement] = useState<
@@ -784,6 +873,215 @@ export function UserProfileContent({
 						<ContributionChart data={contributions} />
 					</div>
 				)}
+
+				{/* Pinned repos */}
+				{(displayedPinnedRepos.length > 0 || isOwner) && (
+					<div className="shrink-0 mb-4 border border-border rounded-md bg-card/50 p-4">
+						<div className="flex items-center justify-between mb-3">
+							<h2 className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
+								Pinned Repositories
+							</h2>
+							{isOwner && (
+								<Button
+									variant="ghost"
+									size="sm"
+									className="h-6 px-1.5 text-[9px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground"
+									onClick={() =>
+										setShowCustomizePinned(
+											true,
+										)
+									}
+								>
+									Customize
+								</Button>
+							)}
+						</div>
+
+						{displayedPinnedRepos.length > 0 ? (
+							<div className="grid gap-2 sm:grid-cols-2">
+								{displayedPinnedRepos.map(
+									(repo) => (
+										<Link
+											key={
+												repo.id
+											}
+											href={`/${repo.full_name}`}
+											className="group rounded-md border border-border px-3 py-2 hover:bg-muted/60 dark:hover:bg-white/3 transition-colors"
+										>
+											<div className="flex items-center justify-between gap-3">
+												<div className="min-w-0">
+													<div className="flex items-center gap-2">
+														<span className="text-sm font-mono text-foreground truncate">
+															{
+																repo.name
+															}
+														</span>
+														{repo.archived && (
+															<span className="text-[9px] font-mono px-1.5 py-0.5 border border-warning/30 text-warning rounded-sm">
+																Archived
+															</span>
+														)}
+													</div>
+													{repo.description && (
+														<p className="text-[11px] text-muted-foreground/60 truncate mt-1">
+															{
+																repo.description
+															}
+														</p>
+													)}
+												</div>
+												<ChevronRight className="w-3 h-3 text-foreground/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+											</div>
+											<div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground/60 font-mono">
+												{repo.language && (
+													<span className="flex items-center gap-1.5">
+														<span
+															className="w-2 h-2 rounded-full"
+															style={{
+																backgroundColor:
+																	getLanguageColor(
+																		repo.language,
+																	),
+															}}
+														/>
+														{
+															repo.language
+														}
+													</span>
+												)}
+												<span className="flex items-center gap-1">
+													<Star className="w-3 h-3" />
+													{formatNumber(
+														repo.stargazers_count,
+													)}
+												</span>
+												<span className="flex items-center gap-1">
+													<GitFork className="w-3 h-3" />
+													{formatNumber(
+														repo.forks_count,
+													)}
+												</span>
+											</div>
+										</Link>
+									),
+								)}
+							</div>
+						) : (
+							<div
+								className="py-4 border border-dashed border-border rounded-md text-center cursor-pointer hover:bg-muted/30 transition-colors"
+								onClick={() =>
+									setShowCustomizePinned(true)
+								}
+							>
+								<Settings2 className="w-4 h-4 text-muted-foreground/30 mx-auto mb-1" />
+								<p className="text-[10px] text-muted-foreground/50 font-mono">
+									Customize pinned
+									repositories
+								</p>
+							</div>
+						)}
+					</div>
+				)}
+
+				<Dialog
+					open={showCustomizePinned}
+					onOpenChange={setShowCustomizePinned}
+				>
+					<DialogContent
+						title="Customize pinned repositories"
+						showCloseButton
+					>
+						<DialogHeader>
+							<DialogTitle className="text-sm font-mono uppercase tracking-wider text-muted-foreground">
+								Customize pinned repositories
+							</DialogTitle>
+						</DialogHeader>
+						<div className="flex flex-col gap-4 py-4">
+							<p className="text-xs text-muted-foreground font-mono">
+								Select up to 6 repositories you want
+								to show on your profile.
+							</p>
+							<div className="max-h-[400px] overflow-y-auto border border-border rounded-md divide-y divide-border">
+								{repos.map((repo) => {
+									const isPinned =
+										customPinnedFullNames.includes(
+											repo.full_name,
+										);
+									const isDisabled =
+										!isPinned &&
+										customPinnedFullNames.length >=
+											6;
+									return (
+										<div
+											key={
+												repo.id
+											}
+											className="flex items-center justify-between gap-4 p-3 hover:bg-muted/30 transition-colors"
+										>
+											<div className="flex-1 min-w-0">
+												<p className="text-sm font-mono truncate">
+													{
+														repo.name
+													}
+												</p>
+												{repo.description && (
+													<p className="text-[11px] text-muted-foreground/50 truncate">
+														{
+															repo.description
+														}
+													</p>
+												)}
+											</div>
+											<Button
+												variant={
+													isPinned
+														? "outline"
+														: "secondary"
+												}
+												size="sm"
+												className="h-7 px-2 text-[10px] font-mono"
+												disabled={
+													isSavingPins ||
+													(isDisabled &&
+														!isPinned)
+												}
+												onClick={() =>
+													handleTogglePin(
+														repo.full_name,
+													)
+												}
+											>
+												{isPinned
+													? "Unpin"
+													: "Pin"}
+											</Button>
+										</div>
+									);
+								})}
+							</div>
+							<div className="flex items-center justify-between">
+								<p className="text-[10px] text-muted-foreground/40 font-mono italic">
+									{
+										customPinnedFullNames.length
+									}{" "}
+									/ 6 pinned
+								</p>
+								<Button
+									variant="secondary"
+									size="sm"
+									className="h-8 px-3 text-[10px] font-mono"
+									onClick={() =>
+										setShowCustomizePinned(
+											false,
+										)
+									}
+								>
+									Done
+								</Button>
+							</div>
+						</div>
+					</DialogContent>
+				</Dialog>
 
 				{/* Repo list */}
 				<div className="flex-1 min-h-0 overflow-y-auto border border-border rounded-md divide-y divide-border">

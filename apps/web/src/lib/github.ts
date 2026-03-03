@@ -1143,6 +1143,123 @@ async function fetchUserOrgTopReposFromGitHub(
 	}
 }
 
+export interface UserPinnedRepo {
+	id: string;
+	name: string;
+	full_name: string;
+	description: string | null;
+	language: string | null;
+	stargazers_count: number;
+	forks_count: number;
+	updated_at: string | null;
+	private: boolean;
+	fork: boolean;
+	archived: boolean;
+	html_url: string;
+}
+
+async function fetchUserPinnedReposFromGitHub(
+	token: string,
+	username: string,
+	perPage: number,
+): Promise<UserPinnedRepo[]> {
+	const query = `query($login: String!, $first: Int!) {
+		user(login: $login) {
+			pinnedItems(first: $first, types: REPOSITORY) {
+				nodes {
+					... on Repository {
+						id
+						name
+						nameWithOwner
+						description
+						isPrivate
+						isFork
+						isArchived
+						stargazerCount
+						forkCount
+						updatedAt
+						url
+						primaryLanguage {
+							name
+						}
+					}
+				}
+			}
+		}
+	}`;
+
+	try {
+		const response = await fetch("https://api.github.com/graphql", {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({
+				query,
+				variables: { login: username, first: perPage },
+			}),
+			signal: AbortSignal.timeout(8_000),
+		});
+		if (!response.ok) return [];
+
+		const json = (await response.json()) as {
+			data?: {
+				user?: {
+					pinnedItems?: {
+						nodes?: Array<{
+							id?: string;
+							name?: string;
+							nameWithOwner?: string;
+							description?: string | null;
+							isPrivate?: boolean;
+							isFork?: boolean;
+							isArchived?: boolean;
+							stargazerCount?: number;
+							forkCount?: number;
+							updatedAt?: string | null;
+							url?: string;
+							primaryLanguage?: {
+								name?: string | null;
+							} | null;
+						} | null>;
+					};
+				};
+			};
+		};
+
+		const nodes = json.data?.user?.pinnedItems?.nodes ?? [];
+		return nodes
+			.filter((node): node is NonNullable<typeof node> => Boolean(node))
+			.filter(
+				(
+					node,
+				): node is NonNullable<typeof node> & {
+					name: string;
+					nameWithOwner: string;
+				} =>
+					typeof node.name === "string" &&
+					typeof node.nameWithOwner === "string",
+			)
+			.map((node) => ({
+				id: node.id ?? node.nameWithOwner,
+				name: node.name,
+				full_name: node.nameWithOwner,
+				description: node.description ?? null,
+				language: node.primaryLanguage?.name ?? null,
+				stargazers_count: node.stargazerCount ?? 0,
+				forks_count: node.forkCount ?? 0,
+				updated_at: node.updatedAt ?? null,
+				private: node.isPrivate ?? false,
+				fork: node.isFork ?? false,
+				archived: node.isArchived ?? false,
+				html_url: node.url ?? `https://github.com/${node.nameWithOwner}`,
+			}));
+	} catch {
+		return [];
+	}
+}
+
 async function fetchRepoWorkflowsFromGitHub(octokit: Octokit, owner: string, repo: string) {
 	const { data } = await octokit.actions.listRepoWorkflows({ owner, repo, per_page: 100 });
 	return data.workflows;
@@ -5794,6 +5911,12 @@ export async function getUserOrgTopRepos(orgLogins: string[]) {
 	const authCtx = await getGitHubAuthContext();
 	if (!authCtx) return [];
 	return fetchUserOrgTopReposFromGitHub(authCtx.octokit, orgLogins);
+}
+
+export async function getUserPinnedRepos(username: string, perPage = 6) {
+	const authCtx = await getGitHubAuthContext();
+	if (!authCtx?.token) return [];
+	return fetchUserPinnedReposFromGitHub(authCtx.token, username, perPage);
 }
 
 export async function getOrgMembers(org: string, perPage = 100) {

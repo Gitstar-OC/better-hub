@@ -35,6 +35,19 @@ export async function getPinnedItemUrls(
 	return rows.map((r) => r.url);
 }
 
+export async function getProfilePinnedRepoFullNames(owner: string): Promise<string[]> {
+	const rows = await prisma.pinnedItem.findMany({
+		where: {
+			owner,
+			repo: "__profile__",
+			itemType: "profile_repo",
+		},
+		orderBy: { pinnedAt: "asc" },
+		select: { url: true },
+	});
+	return rows.map((r) => r.url);
+}
+
 export async function pinItem(
 	userId: string,
 	owner: string,
