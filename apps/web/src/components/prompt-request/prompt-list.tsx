@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useTransition, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import {
 	Sparkles,
@@ -102,7 +103,7 @@ export function PromptList({ owner, repo, promptRequests }: PromptListProps) {
 		const c = { open: 0, closed: 0 };
 		for (const pr of promptRequests) {
 			if (pr.status === "open") c.open++;
-			else c.closed++;
+			else if (pr.status === "accepted" || pr.status === "closed") c.closed++;
 		}
 		return c;
 	}, [promptRequests]);
@@ -194,7 +195,7 @@ export function PromptList({ owner, repo, promptRequests }: PromptListProps) {
 							placeholder="Search prompt requests..."
 							value={search}
 							onChange={(e) => setSearch(e.target.value)}
-							className="w-full h-8 bg-transparent border border-border rounded-lg pl-9 pr-4 text-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 transition-colors"
+							className="w-full h-8 bg-transparent border border-border rounded-sm pl-9 pr-4 text-sm placeholder:text-muted-foreground/40 focus:outline-none focus:border-foreground/20 transition-colors"
 						/>
 					</div>
 
@@ -209,7 +210,7 @@ export function PromptList({ owner, repo, promptRequests }: PromptListProps) {
 							)
 						}
 						className={cn(
-							"flex items-center gap-1.5 h-8 px-3 rounded-lg border text-[11px] font-mono uppercase tracking-wider transition-colors cursor-pointer",
+							"flex items-center gap-1.5 h-8 px-3 rounded-sm border text-[11px] font-mono uppercase tracking-wider transition-colors cursor-pointer",
 							sort !== "newest"
 								? "border-foreground/20 bg-muted/50 dark:bg-white/4 text-foreground"
 								: "border-border text-muted-foreground/60 hover:text-foreground hover:bg-muted/40 dark:hover:bg-white/3",
@@ -221,7 +222,7 @@ export function PromptList({ owner, repo, promptRequests }: PromptListProps) {
 
 					<button
 						onClick={() => setSuggestDialogOpen(true)}
-						className="ml-auto flex items-center gap-1.5 h-8 px-3 text-xs font-medium bg-foreground text-background rounded-lg hover:bg-foreground/90 transition-colors cursor-pointer"
+						className="ml-auto flex items-center gap-1.5 h-8 px-3 text-xs font-medium bg-primary text-background rounded-sm hover:bg-primary/90 transition-colors cursor-pointer"
 					>
 						<Sparkles className="w-3 h-3" />
 						Suggest Prompt
@@ -323,6 +324,51 @@ export function PromptList({ owner, repo, promptRequests }: PromptListProps) {
 									)}
 								</div>
 								<div className="flex items-center gap-2 mt-0.5">
+									{pr.userName && (
+										<>
+											{pr.userAvatarUrl && (
+												<Image
+													src={
+														pr.userAvatarUrl
+													}
+													alt={
+														pr.userName
+													}
+													width={
+														14
+													}
+													height={
+														14
+													}
+													className="rounded-full"
+												/>
+											)}
+											{pr.userLogin ? (
+												<Link
+													href={`/users/${pr.userLogin}`}
+													onClick={(
+														e,
+													) =>
+														e.stopPropagation()
+													}
+													className="text-[11px] text-muted-foreground/60 hover:text-foreground hover:underline"
+												>
+													{
+														pr.userName
+													}
+												</Link>
+											) : (
+												<span className="text-[11px] text-muted-foreground/60">
+													{
+														pr.userName
+													}
+												</span>
+											)}
+											<span className="text-muted-foreground/30">
+												·
+											</span>
+										</>
+									)}
 									<span className="text-[11px] text-muted-foreground/50 font-mono">
 										<TimeAgo
 											date={

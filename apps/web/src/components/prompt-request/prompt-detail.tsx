@@ -16,6 +16,7 @@ import {
 	Check,
 	RotateCcw,
 	Ghost,
+	CornerDownLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ClientMarkdown } from "@/components/shared/client-markdown";
@@ -35,7 +36,9 @@ import type {
 	PromptRequest,
 	PromptRequestStatus,
 	PromptRequestComment,
+	PromptRequestReaction,
 } from "@/lib/prompt-request-store";
+import { PromptReactionDisplay } from "./prompt-reaction-display";
 
 const statusColors: Record<PromptRequestStatus, string> = {
 	open: "bg-green-500/15 text-green-400",
@@ -54,7 +57,8 @@ interface PromptDetailProps {
 	repo: string;
 	promptRequest: PromptRequest;
 	comments: PromptRequestComment[];
-	currentUser: { id: string; name: string; image: string } | null;
+	reactions: PromptRequestReaction[];
+	currentUser: { id: string; login: string | null; name: string; image: string } | null;
 	canManage: boolean;
 	isMaintainer: boolean;
 }
@@ -64,6 +68,7 @@ export function PromptDetail({
 	repo,
 	promptRequest,
 	comments,
+	reactions,
 	currentUser,
 	canManage,
 	isMaintainer,
@@ -101,6 +106,7 @@ export function PromptDetail({
 			id: `optimistic-${Date.now()}`,
 			promptRequestId: promptRequest.id,
 			userId: currentUser.id,
+			userLogin: currentUser.login,
 			userName: currentUser.name,
 			userAvatarUrl: currentUser.image,
 			body,
@@ -272,9 +278,16 @@ export function PromptDetail({
 				{/* Left — Prompt body + actions */}
 				<div className="flex-1 min-w-0 space-y-4">
 					{/* Body */}
-					<div className="border border-border rounded-lg p-4">
+					<div className="border border-border rounded-md p-4">
 						<ClientMarkdown content={promptRequest.body} />
 					</div>
+
+					{/* Reactions */}
+					<PromptReactionDisplay
+						promptRequestId={promptRequest.id}
+						reactions={reactions}
+						currentUserId={currentUser?.id ?? null}
+					/>
 
 					{/* Inline actions */}
 					<div className="flex items-center gap-1.5">
@@ -283,7 +296,7 @@ export function PromptDetail({
 								<button
 									onClick={handleRunWithGhost}
 									disabled={isAccepting}
-									className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium bg-foreground text-background rounded-md hover:bg-foreground/90 transition-colors cursor-pointer disabled:opacity-50"
+									className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium bg-primary text-background rounded-sm hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50"
 								>
 									{isAccepting ? (
 										<Loader2 className="w-3 h-3 animate-spin" />
@@ -298,7 +311,7 @@ export function PromptDetail({
 									}
 									disabled={isAccepting}
 									className={cn(
-										"flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-md border transition-all cursor-pointer disabled:opacity-50",
+										"flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-sm border transition-all cursor-pointer disabled:opacity-50",
 										copied
 											? "bg-green-500/15 text-green-400 border-green-500/20"
 											: "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground",
@@ -323,7 +336,7 @@ export function PromptDetail({
 							<button
 								onClick={handleCopy}
 								className={cn(
-									"flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-md border transition-all cursor-pointer",
+									"flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-sm border transition-all cursor-pointer",
 									copied
 										? "bg-green-500/15 text-green-400 border-green-500/20"
 										: "bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground",
@@ -410,7 +423,7 @@ export function PromptDetail({
 												comment.id
 											}
 											className={cn(
-												"border border-border/60 rounded-lg p-3 space-y-1.5",
+												"border border-border/60 rounded-md p-3 space-y-1.5",
 												comment.id.startsWith(
 													"optimistic-",
 												) &&
@@ -437,11 +450,22 @@ export function PromptDetail({
 												) : (
 													<div className="w-[18px] h-[18px] rounded-full bg-muted" />
 												)}
-												<span className="text-[11px] font-medium text-foreground">
-													{
-														comment.userName
-													}
-												</span>
+												{comment.userLogin ? (
+													<Link
+														href={`/users/${comment.userLogin}`}
+														className="text-[11px] font-medium text-foreground hover:underline"
+													>
+														{
+															comment.userName
+														}
+													</Link>
+												) : (
+													<span className="text-[11px] font-medium text-foreground">
+														{
+															comment.userName
+														}
+													</span>
+												)}
 												<span className="text-[10px] text-muted-foreground/40 font-mono">
 													<TimeAgo
 														date={
@@ -482,13 +506,14 @@ export function PromptDetail({
 						)}
 
 						{currentUser && (
-							<div className="space-y-1.5">
+							<div className="space-y-1.5 rounded-md border">
 								<MarkdownEditor
 									value={commentBody}
 									onChange={setCommentBody}
 									placeholder="Leave a comment..."
-									compact
-									rows={2}
+									rows={4}
+									className="border-none"
+									resizeYIndicator={false}
 									onKeyDown={(e) => {
 										if (
 											e.key ===
@@ -501,7 +526,7 @@ export function PromptDetail({
 										}
 									}}
 								/>
-								<div className="flex justify-end">
+								<div className="flex justify-end mb-3 pr-3">
 									<button
 										onClick={
 											handleAddComment
@@ -510,7 +535,13 @@ export function PromptDetail({
 											!commentBody.trim() ||
 											isSubmittingComment
 										}
-										className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-foreground text-background rounded-md hover:opacity-90 transition-opacity disabled:opacity-40 cursor-pointer"
+										className={cn(
+											"flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md",
+											"border border-border",
+											"text-foreground/80 hover:text-foreground hover:bg-muted/50",
+											"transition-colors cursor-pointer",
+											"disabled:opacity-40 disabled:cursor-not-allowed",
+										)}
 									>
 										{isSubmittingComment ? (
 											<Loader2 className="w-3 h-3 animate-spin" />
@@ -527,6 +558,47 @@ export function PromptDetail({
 
 				{/* Right — Metadata sidebar */}
 				<div className="hidden md:block w-56 shrink-0 space-y-4">
+					{/* Author */}
+					<div className="space-y-1.5">
+						<p className="text-[10px] font-mono text-muted-foreground/40 uppercase tracking-wider">
+							Author
+						</p>
+						<div className="flex items-center gap-2">
+							{promptRequest.userAvatarUrl ? (
+								<Image
+									src={
+										promptRequest.userAvatarUrl
+									}
+									alt={
+										promptRequest.userName ??
+										"User"
+									}
+									width={20}
+									height={20}
+									className="rounded-full"
+								/>
+							) : (
+								<div className="w-5 h-5 rounded-full bg-muted" />
+							)}
+							{promptRequest.userLogin ? (
+								<Link
+									href={`/users/${promptRequest.userLogin}`}
+									className="text-[11px] font-medium text-foreground hover:underline"
+								>
+									{promptRequest.userName ??
+										promptRequest.userLogin}
+								</Link>
+							) : (
+								<span className="text-[11px] font-medium text-muted-foreground/60">
+									{promptRequest.userName ??
+										"Unknown"}
+								</span>
+							)}
+						</div>
+					</div>
+
+					<div className="h-px bg-border/30" />
+
 					{/* Status */}
 					<div className="space-y-1.5">
 						<p className="text-[10px] font-mono text-muted-foreground/40 uppercase tracking-wider">

@@ -1,28 +1,8 @@
 "use client";
 
 import { useEffect, useState, memo } from "react";
-import type { Highlighter, BundledLanguage } from "shiki";
-
-let highlighterInstance: Highlighter | null = null;
-let highlighterPromise: Promise<Highlighter> | null = null;
-
-function getClientHighlighter(): Promise<Highlighter> {
-	if (highlighterInstance) return Promise.resolve(highlighterInstance);
-	if (!highlighterPromise) {
-		highlighterPromise = import("shiki")
-			.then(({ createHighlighter }) =>
-				createHighlighter({
-					themes: ["vitesse-light", "vitesse-black"],
-					langs: [],
-				}),
-			)
-			.then((h) => {
-				highlighterInstance = h;
-				return h;
-			});
-	}
-	return highlighterPromise;
-}
+import { useColorTheme } from "@/components/theme/theme-provider";
+import { highlightCodeClient } from "@/lib/shiki-client";
 
 export const HighlightedCodeBlock = memo(function HighlightedCodeBlock({
 	code,
@@ -35,6 +15,7 @@ export const HighlightedCodeBlock = memo(function HighlightedCodeBlock({
 	inlineColors?: boolean;
 	className?: string;
 }) {
+	const { themeId } = useColorTheme();
 	const [html, setHtml] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -50,7 +31,7 @@ export const HighlightedCodeBlock = memo(function HighlightedCodeBlock({
 							lang as BundledLanguage,
 						);
 					} catch {
-						effectiveLang = "text";
+  						effectiveLang = "text";
 						if (!loaded.includes("text")) {
 							try {
 								await highlighter.loadLanguage(

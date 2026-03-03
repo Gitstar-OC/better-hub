@@ -1,5 +1,6 @@
 "use client";
 
+import { Children, isValidElement, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -8,6 +9,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeKatex from "rehype-katex";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { isGitHubUserAttachmentAssetUrl } from "@/lib/github-user-attachments";
 import { parseGitHubUrl, toInternalUrl } from "@/lib/github-utils";
 import { HighlightedCodeBlock } from "@/components/shared/highlighted-code-block";
 
@@ -58,6 +60,23 @@ function linkifyMentionsMd(md: string): string {
 		);
 	}
 	return parts.join("");
+}
+
+function childrenToText(children: ReactNode): string {
+	return Children.toArray(children)
+		.map((child) => {
+			if (typeof child === "string" || typeof child === "number") {
+				return String(child);
+			}
+			if (
+				isValidElement<{ children?: ReactNode }>(child) &&
+				child.props.children
+			) {
+				return childrenToText(child.props.children);
+			}
+			return "";
+		})
+		.join("");
 }
 
 export function ClientMarkdown({ content, className }: { content: string; className?: string }) {
@@ -111,6 +130,29 @@ export function ClientMarkdown({ content, className }: { content: string; classN
 						return <pre>{children}</pre>;
 					},
 					a({ href, children, ...rest }) {
+						if (href && isGitHubUserAttachmentAssetUrl(href)) {
+							const label =
+								childrenToText(children).trim();
+							if (label === href) {
+								return (
+									<video
+										className="ghmd-user-attachment-video"
+										controls
+										preload="metadata"
+										src={href}
+									>
+										<a
+											href={href}
+											target="_blank"
+											rel="noopener noreferrer"
+										>
+											{children}
+										</a>
+									</video>
+								);
+							}
+						}
+
 						if (href?.startsWith("/users/")) {
 							return (
 								<Link
